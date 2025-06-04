@@ -8,6 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Calendar, Image as ImageIcon, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import Link from "next/link";
 import {
   Form,
   FormControl,
@@ -41,11 +42,7 @@ const eventSchema = z
     start_date: z
       .string()
       .min(1, "Start date is required")
-      .refine((val) => !isNaN(Date.parse(val)), "Invalid start date")
-      .refine(
-        (val) => new Date(val) > new Date(),
-        "Start date must be in the future"
-      ),
+      .refine((val) => !isNaN(Date.parse(val)), "Invalid start date"),
     end_date: z
       .string()
       .min(1, "End date is required")
@@ -56,10 +53,6 @@ const eventSchema = z
       .refine(
         (val) => !isNaN(Date.parse(val)),
         "Invalid registration start date"
-      )
-      .refine(
-        (val) => new Date(val) > new Date(),
-        "Registration start date must be in the future"
       ),
     registration_end: z
       .string()
@@ -230,14 +223,9 @@ export default function EditEventPage() {
     [form]
   );
 
-  // Add helper functions for date validation
+  // Update getMinDateTime to remove future date requirements
   const getMinDateTime = (field: keyof EventFormValues): string => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); // Adjust for timezone
-
     switch (field) {
-      case "start_date":
-        return now.toISOString().slice(0, 16);
       case "end_date": {
         const startDate = form.getValues("start_date");
         if (startDate) {
@@ -245,10 +233,8 @@ export default function EditEventPage() {
           minDate.setMinutes(minDate.getMinutes() + 1); // Ensure at least 1 minute after start
           return minDate.toISOString().slice(0, 16);
         }
-        return now.toISOString().slice(0, 16);
+        return "";
       }
-      case "registration_start":
-        return now.toISOString().slice(0, 16);
       case "registration_end": {
         const regStart = form.getValues("registration_start");
         if (regStart) {
@@ -256,13 +242,14 @@ export default function EditEventPage() {
           minDate.setMinutes(minDate.getMinutes() + 1);
           return minDate.toISOString().slice(0, 16);
         }
-        return now.toISOString().slice(0, 16);
+        return "";
       }
       default:
-        return now.toISOString().slice(0, 16);
+        return "";
     }
   };
 
+  // Update getMaxDateTime to only enforce registration before event start
   const getMaxDateTime = (field: keyof EventFormValues): string => {
     switch (field) {
       case "registration_start":
@@ -454,9 +441,9 @@ export default function EditEventPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <Button variant="ghost" className="mb-4" onClick={() => router.back()}>
-        ← Back
-      </Button>
+      <Link href="/home" style={{ textDecoration: "none" }}>
+        <Button>Home</Button>
+      </Link>
 
       <Card className="max-w-4xl mx-auto">
         <CardHeader>
@@ -563,7 +550,6 @@ export default function EditEventPage() {
                           <input
                             {...field}
                             type="datetime-local"
-                            min={getMinDateTime("start_date")}
                             onChange={(e) =>
                               handleDateChange("start_date", e.target.value)
                             }
@@ -588,7 +574,6 @@ export default function EditEventPage() {
                           <input
                             {...field}
                             type="datetime-local"
-                            min={getMinDateTime("end_date")}
                             onChange={(e) =>
                               handleDateChange("end_date", e.target.value)
                             }

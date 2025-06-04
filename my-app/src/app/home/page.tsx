@@ -17,22 +17,60 @@ import {
   useAuth,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Calendar, Users, MapPin } from "lucide-react";
+import {
+  PlusCircle,
+  Calendar,
+  Users,
+  MapPin,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import Link from "next/link";
 import axios from "axios";
 
 // API base URL
 const API_URL = "http://localhost:8000";
+const ADMIN_EMAIL = "rohithvishwanath1789@gmail.com";
 
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [events, setEvents] = useState<any[]>([]);
+  const [allEvents, setAllEvents] = useState<any[]>([]); // Store all fetched events
+  const [filteredEvents, setFilteredEvents] = useState<any[]>([]); // Store filtered events
   const [registeredEvents, setRegisteredEvents] = useState<any[]>([]);
   const [interestedEvents, setInterestedEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [category, setCategory] = useState<string | null>(null);
   const { getToken, isLoaded, isSignedIn } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [pastEvents, setPastEvents] = useState<any[]>([]);
+  const [showPastEvents, setShowPastEvents] = useState(false);
+  const [loadingPastEvents, setLoadingPastEvents] = useState(false);
+
+  // Check if user is admin
+  useEffect(() => {
+    const checkAdminStatus = async () => {
+      if (isLoaded && isSignedIn) {
+        try {
+          const token = await getToken();
+          const response = await fetch(`${API_URL}/users/me`, {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            const userData = await response.json();
+            setIsAdmin(userData.is_admin);
+          }
+        } catch (error) {
+          console.error("Error checking admin status:", error);
+        }
+      }
+    };
+
+    checkAdminStatus();
+  }, [isLoaded, isSignedIn, getToken]);
 
   // Fetch registered and interested events
   useEffect(() => {
@@ -70,6 +108,7 @@ export default function EventsPage() {
             id: event.id,
             title: event.title,
             date: new Date(event.start_date).toISOString().split("T")[0],
+            enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
             startTime: new Date(event.start_date).toTimeString().slice(0, 5),
             endTime: new Date(event.end_date).toTimeString().slice(0, 5),
@@ -84,6 +123,7 @@ export default function EventsPage() {
             id: event.id,
             title: event.title,
             date: new Date(event.start_date).toISOString().split("T")[0],
+            enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
             startTime: new Date(event.start_date).toTimeString().slice(0, 5),
             endTime: new Date(event.end_date).toTimeString().slice(0, 5),
@@ -127,6 +167,7 @@ export default function EventsPage() {
           id: event.id,
           title: event.title,
           date: new Date(event.start_date).toISOString().split("T")[0],
+          enddate: new Date(event.end_date).toISOString().split("T")[0],
           location: event.location,
           startTime: new Date(event.start_date).toTimeString().slice(0, 5),
           endTime: new Date(event.end_date).toTimeString().slice(0, 5),
@@ -144,7 +185,8 @@ export default function EventsPage() {
             !interestedEvents.some((e) => e.id === event.id)
         );
 
-        setEvents(filteredEvents);
+        setAllEvents(filteredEvents);
+        setFilteredEvents(filteredEvents);
         setError(null);
       } catch (err) {
         console.error("Error fetching events:", err);
@@ -156,83 +198,31 @@ export default function EventsPage() {
     fetchEvents();
   }, [category, registeredEvents, interestedEvents]);
 
-  // Search events
+  // Handle search and filtering
   useEffect(() => {
-    const searchEvents = async () => {
-      if (!searchTerm || searchTerm.length < 2) {
-        // If search term is empty or too short, fetch all events
-        const params = new URLSearchParams();
-        if (category) params.append("category", category);
-        params.append("upcoming", "true");
-        params.append("approved_only", "true");
+    if (!searchTerm.trim()) {
+      // If search is empty, show all events (filtered by category if set)
+      const categoryFiltered = category
+        ? allEvents.filter((event) => event.category === category)
+        : allEvents;
+      setFilteredEvents(categoryFiltered);
+      return;
+    }
 
-        try {
-          const response = await axios.get(
-            `${API_URL}/events?${params.toString()}`
-          );
+    // Search in title, description, location, and category
+    const searchResults = allEvents.filter((event) => {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        (event.title?.toLowerCase().includes(searchLower) ||
+          event.description?.toLowerCase().includes(searchLower) ||
+          event.location?.toLowerCase().includes(searchLower) ||
+          event.category?.toLowerCase().includes(searchLower)) &&
+        (!category || event.category === category)
+      );
+    });
 
-          const formattedEvents = response.data.map((event: any) => ({
-            id: event.id,
-            title: event.title,
-            date: new Date(event.start_date).toISOString().split("T")[0],
-            location: event.location,
-            startTime: new Date(event.start_date).toTimeString().slice(0, 5),
-            endTime: new Date(event.end_date).toTimeString().slice(0, 5),
-            description: event.description,
-            category: event.category,
-            attendees: event.attendees_count,
-            image_path: event.image_path,
-            is_approved: event.is_approved,
-          }));
-
-          // Filter out events that user is already registered for or interested in
-          const filteredEvents = formattedEvents.filter(
-            (event: any) =>
-              !registeredEvents.some((e) => e.id === event.id) &&
-              !interestedEvents.some((e) => e.id === event.id)
-          );
-
-          setEvents(filteredEvents);
-        } catch (err) {
-          console.error("Error fetching events:", err);
-        }
-        return;
-      }
-
-      try {
-        const response = await axios.get(
-          `${API_URL}/search?query=${encodeURIComponent(searchTerm)}`
-        );
-
-        const formattedEvents = response.data.map((event: any) => ({
-          id: event.id,
-          title: event.title,
-          date: new Date(event.start_date).toISOString().split("T")[0],
-          location: event.location,
-          startTime: new Date(event.start_date).toTimeString().slice(0, 5),
-          endTime: new Date(event.end_date).toTimeString().slice(0, 5),
-          description: event.description,
-          category: event.category,
-          attendees: event.attendees_count,
-          image_path: event.image_path,
-          is_approved: event.is_approved,
-        }));
-
-        // Filter out events that user is already registered for or interested in
-        const filteredEvents = formattedEvents.filter(
-          (event: any) =>
-            !registeredEvents.some((e) => e.id === event.id) &&
-            !interestedEvents.some((e) => e.id === event.id)
-        );
-
-        setEvents(filteredEvents);
-      } catch (err) {
-        console.error("Error searching events:", err);
-      }
-    };
-
-    searchEvents();
-  }, [searchTerm, category, registeredEvents, interestedEvents]);
+    setFilteredEvents(searchResults);
+  }, [searchTerm, category, allEvents]);
 
   // Setup axios interceptor to add auth token to requests
   useEffect(() => {
@@ -273,6 +263,7 @@ export default function EventsPage() {
     id: number;
     title: string;
     date: string;
+    enddate: string;
     location: string;
     startTime: string;
     endTime: string;
@@ -307,8 +298,8 @@ export default function EventsPage() {
       const data = await response.json();
 
       // Toggle the interest status and update the events list
-      setEvents(
-        events.map((event) => {
+      setFilteredEvents(
+        filteredEvents.map((event) => {
           if (event.id === eventId) {
             const isCurrentlyInterested = event.userInterested || false;
             return {
@@ -326,6 +317,48 @@ export default function EventsPage() {
       console.error("Error marking interest:", err);
     }
   };
+
+  // Add new effect for fetching past events
+  useEffect(() => {
+    const fetchPastEvents = async () => {
+      if (!showPastEvents) return; // Only fetch when section is expanded
+
+      try {
+        setLoadingPastEvents(true);
+        const params = new URLSearchParams();
+        if (category) params.append("category", category);
+        params.append("past", "true");
+        params.append("approved_only", "true");
+
+        const response = await axios.get(
+          `${API_URL}/events?${params.toString()}`
+        );
+
+        const formattedEvents = response.data.map((event: any) => ({
+          id: event.id,
+          title: event.title,
+          date: new Date(event.start_date).toISOString().split("T")[0],
+          enddate: new Date(event.end_date).toISOString().split("T")[0],
+          location: event.location,
+          startTime: new Date(event.start_date).toTimeString().slice(0, 5),
+          endTime: new Date(event.end_date).toTimeString().slice(0, 5),
+          description: event.description,
+          category: event.category,
+          attendees: event.attendees_count,
+          image_path: event.image_path,
+          is_approved: event.is_approved,
+        }));
+
+        setPastEvents(formattedEvents);
+      } catch (err) {
+        console.error("Error fetching past events:", err);
+      } finally {
+        setLoadingPastEvents(false);
+      }
+    };
+
+    fetchPastEvents();
+  }, [showPastEvents, category]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -402,28 +435,25 @@ export default function EventsPage() {
                 </SignedOut>
               </MenubarContent>
             </MenubarMenu>
-            <MenubarMenu>
-              <MenubarTrigger>Admin</MenubarTrigger>
-              <MenubarContent>
-                <SignedIn>
-                  <MenubarItem>
-                    <Link href="/admind" className="flex w-full">
-                      Dashboard
-                    </Link>
-                  </MenubarItem>
-                  <MenubarItem>
-                    <Link href="/admind" className="flex w-full">
-                      Organizer Panel
-                    </Link>
-                  </MenubarItem>
-                </SignedIn>
-                <SignedOut>
-                  <MenubarItem>
-                    <SignInButton>Sign in as admin to view</SignInButton>
-                  </MenubarItem>
-                </SignedOut>
-              </MenubarContent>
-            </MenubarMenu>
+            {isAdmin && (
+              <MenubarMenu>
+                <MenubarTrigger>Admin</MenubarTrigger>
+                <MenubarContent>
+                  <SignedIn>
+                    <MenubarItem>
+                      <Link href="/admind" className="flex w-full">
+                        Dashboard
+                      </Link>
+                    </MenubarItem>
+                    <MenubarItem>
+                      <Link href="/admind" className="flex w-full">
+                        Organizer Panel
+                      </Link>
+                    </MenubarItem>
+                  </SignedIn>
+                </MenubarContent>
+              </MenubarMenu>
+            )}
           </Menubar>
 
           <div className="flex items-center gap-4">
@@ -449,7 +479,7 @@ export default function EventsPage() {
         <div className="flex flex-col md:flex-row gap-4 mb-6">
           <input
             type="text"
-            placeholder="Search events..."
+            placeholder="Search by title, description, location..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-grow p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -457,7 +487,9 @@ export default function EventsPage() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              className="flex items-center gap-2"
+              className={`flex items-center gap-2 ${
+                !category ? "bg-primary/10" : ""
+              }`}
               onClick={() => setCategory(null)}
             >
               <Calendar size={16} />
@@ -497,8 +529,62 @@ export default function EventsPage() {
           )}
 
           <div>
-            <h2 className="text-2xl font-bold mb-4">Upcoming Events</h2>
-            <EventCardsGrid events={events} onInterest={markInterest} />
+            <h2 className="text-2xl font-bold mb-4">
+              {searchTerm
+                ? `Search Results (${filteredEvents.length})`
+                : "Upcoming Events"}
+            </h2>
+            {loading ? (
+              <div className="text-center py-8">Loading...</div>
+            ) : filteredEvents.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchTerm
+                  ? "No events found matching your search"
+                  : "No upcoming events available"}
+              </div>
+            ) : (
+              <EventCardsGrid
+                events={filteredEvents}
+                onInterest={markInterest}
+              />
+            )}
+          </div>
+
+          {/* Past Events Section */}
+          <div className="border-t pt-8">
+            <button
+              onClick={() => setShowPastEvents(!showPastEvents)}
+              className="flex items-center gap-2 text-2xl font-bold mb-4 hover:text-primary transition-colors"
+            >
+              Past Events
+              {showPastEvents ? (
+                <ChevronUp className="h-6 w-6" />
+              ) : (
+                <ChevronDown className="h-6 w-6" />
+              )}
+            </button>
+
+            {showPastEvents && (
+              <div className="mt-4">
+                {loadingPastEvents ? (
+                  <div className="text-center py-8">Loading past events...</div>
+                ) : pastEvents.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No past events found
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <p className="text-muted-foreground">
+                      Showing {pastEvents.length} past events
+                    </p>
+                    <EventCardsGrid
+                      events={pastEvents}
+                      showInterestButton={false}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </main>

@@ -40,11 +40,7 @@ const eventSchema = z
     start_date: z
       .string()
       .min(1, "Start date is required")
-      .refine((val) => !isNaN(Date.parse(val)), "Invalid start date")
-      .refine(
-        (val) => new Date(val) > new Date(),
-        "Start date must be in the future"
-      ),
+      .refine((val) => !isNaN(Date.parse(val)), "Invalid start date"),
     end_date: z
       .string()
       .min(1, "End date is required")
@@ -55,10 +51,6 @@ const eventSchema = z
       .refine(
         (val) => !isNaN(Date.parse(val)),
         "Invalid registration start date"
-      )
-      .refine(
-        (val) => new Date(val) > new Date(),
-        "Registration start date must be in the future"
       ),
     registration_end: z
       .string()
@@ -78,10 +70,19 @@ const eventSchema = z
   })
   .refine(
     (data) => {
+      const now = new Date();
+      now.setSeconds(0, 0); // Remove seconds and milliseconds for comparison
+
       const startDate = new Date(data.start_date);
       const endDate = new Date(data.end_date);
       const regStartDate = new Date(data.registration_start);
       const regEndDate = new Date(data.registration_end);
+
+      // Set seconds and milliseconds to 0 for all dates
+      startDate.setSeconds(0, 0);
+      endDate.setSeconds(0, 0);
+      regStartDate.setSeconds(0, 0);
+      regEndDate.setSeconds(0, 0);
 
       // Check if end date is after start date
       if (endDate <= startDate) {
@@ -218,6 +219,7 @@ export default function AddEventPage() {
   const getMinDateTime = (field: keyof EventFormValues): string => {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset()); // Adjust for timezone
+    now.setSeconds(0, 0); // Remove seconds and milliseconds
 
     switch (field) {
       case "start_date":
@@ -254,7 +256,6 @@ export default function AddEventPage() {
         const startDate = form.getValues("start_date");
         if (startDate) {
           const maxDate = new Date(startDate);
-          maxDate.setMinutes(maxDate.getMinutes() - 1);
           return maxDate.toISOString().slice(0, 16);
         }
         return "";

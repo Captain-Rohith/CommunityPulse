@@ -8,6 +8,7 @@ interface Event {
   title: string;
   category: string;
   date: string;
+  enddate: string;
   location: string;
   startTime: string;
   endTime: string;
@@ -15,6 +16,7 @@ interface Event {
   attendees?: number;
   image_path?: string;
   userInterested?: boolean;
+  is_approved?: boolean;
 }
 
 interface EventCardProps {
@@ -22,6 +24,8 @@ interface EventCardProps {
   className?: string;
   onInterest?: (eventId: number) => void;
   showInterestButton?: boolean;
+  showEditButton?: boolean;
+  showApprovalStatus?: boolean;
 }
 
 function EventCard({
@@ -29,6 +33,8 @@ function EventCard({
   className,
   onInterest,
   showInterestButton = true,
+  showEditButton = false,
+  showApprovalStatus = false,
   ...props
 }: EventCardProps) {
   // Handle event date formatting
@@ -100,12 +106,26 @@ function EventCard({
           ) : (
             <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 opacity-80"></div>
           )}
-          <div className="absolute top-4 right-4 bg-white/90 text-xs font-medium px-2 py-1 rounded-full">
-            {event.category}
+          <div className="absolute top-4 right-4 flex gap-2">
+            {showApprovalStatus && (
+              <div
+                className={cn(
+                  "text-xs font-medium px-2 py-1 rounded-full",
+                  event.is_approved
+                    ? "bg-green-100 text-green-800"
+                    : "bg-yellow-100 text-yellow-800"
+                )}
+              >
+                {event.is_approved ? "Approved" : "Pending"}
+              </div>
+            )}
+            <div className="bg-white/90 text-xs font-medium px-2 py-1 rounded-full">
+              {event.category}
+            </div>
           </div>
         </div>
 
-        <div className="p-4 space-y-4 flex-grow">
+        <div className="p-4 space-y-4 flex-1 flex flex-col">
           {/* Title and date */}
           <div className="space-y-2">
             <h3 className="text-lg font-semibold line-clamp-2">
@@ -113,7 +133,9 @@ function EventCard({
             </h3>
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <Calendar className="h-4 w-4" />
-              <span>{formatDate(event.date)}</span>
+              <span>
+                {formatDate(event.date)} - {formatDate(event.enddate)}
+              </span>
             </div>
           </div>
 
@@ -136,24 +158,35 @@ function EventCard({
             {event.description}
           </p>
 
-          {/* Footer with attendance and action button */}
-          <div className="flex items-center justify-between mt-2 pt-4 border-t">
+          {/* Footer with attendance, edit button, and interest button */}
+          <div className="flex items-center justify-between mt-auto pt-4">
             <div className="flex items-center text-sm gap-1.5">
               <Users className="h-4 w-4" />
               <span>{event.attendees || 0} attending</span>
             </div>
-            {showInterestButton && (
-              <button
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  event.userInterested
-                    ? "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                    : "bg-primary text-primary-foreground hover:bg-primary/90"
-                }`}
-                onClick={handleInterestClick}
-              >
-                {buttonText}
-              </button>
-            )}
+            <div className="flex gap-2">
+              {showEditButton && (
+                <Link
+                  href={`/events/${event.id}/edit`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium bg-secondary text-secondary-foreground hover:bg-secondary/90 transition-colors"
+                >
+                  Edit
+                </Link>
+              )}
+              {showInterestButton && (
+                <button
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    event.userInterested
+                      ? "bg-gray-200 text-gray-800 hover:bg-gray-300"
+                      : "bg-primary text-primary-foreground hover:bg-primary/90"
+                  }`}
+                  onClick={handleInterestClick}
+                >
+                  {buttonText}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -166,10 +199,14 @@ function EventCardsGrid({
   events,
   onInterest,
   showInterestButton = true,
+  showEditButton = false,
+  showApprovalStatus = false,
 }: {
   events: Event[];
   onInterest?: (eventId: number) => void;
   showInterestButton?: boolean;
+  showEditButton?: boolean;
+  showApprovalStatus?: boolean;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -179,6 +216,8 @@ function EventCardsGrid({
           event={event}
           onInterest={onInterest}
           showInterestButton={showInterestButton}
+          showEditButton={showEditButton}
+          showApprovalStatus={showApprovalStatus}
         />
       ))}
     </div>

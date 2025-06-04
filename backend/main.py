@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Query, Request, Header
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Query, Request, Header, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -90,6 +90,8 @@ class User(Base):
     # Relationships
     events = relationship("Event", back_populates="organizer")
     event_registrations = relationship("EventRegistration", back_populates="user")
+    event_likes = relationship("EventLike", back_populates="user")
+    event_reports = relationship("EventReport", back_populates="user")
 
 class Event(Base):
     __tablename__ = "events"
@@ -113,6 +115,8 @@ class Event(Base):
     # Relationships
     organizer = relationship("User", back_populates="events")
     registrations = relationship("EventRegistration", back_populates="event", cascade="all, delete-orphan")
+    likes = relationship("EventLike", back_populates="event", cascade="all, delete-orphan")
+    reports = relationship("EventReport", back_populates="event", cascade="all, delete-orphan")
 
 class EventRegistration(Base):
     __tablename__ = "event_registrations"
@@ -140,6 +144,32 @@ class Notification(Base):
     is_read = Column(Boolean, default=False)
     notification_type = Column(String)  # "reminder", "update", "cancellation"
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+class EventLike(Base):
+    __tablename__ = "event_likes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    event = relationship("Event", back_populates="likes")
+    user = relationship("User", back_populates="event_likes")
+
+class EventReport(Base):
+    __tablename__ = "event_reports"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    reason = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="pending")  # pending, reviewed, dismissed
+    
+    # Relationships
+    event = relationship("Event", back_populates="reports")
+    user = relationship("User", back_populates="event_reports")
     
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -223,6 +253,9 @@ class EventResponse(BaseModel):
     updated_at: datetime
     attendees_count: int
     is_registered: Optional[bool] = None
+    organizer: UserResponse
+    likes_count: int = 0
+    is_liked: Optional[bool] = None
     
     class Config:
         from_attributes = True
@@ -436,6 +469,7 @@ async def create_event(
 def get_events(
     category: Optional[str] = None,
     upcoming: bool = False,
+    past: bool = False,
     approved_only: bool = True,
     db: Session = Depends(get_db)
 ):
@@ -449,14 +483,16 @@ def get_events(
     if category:
         query = query.filter(Event.category == category)
     
-    # Filter for upcoming events
+    # Filter for upcoming or past events
     if upcoming:
         query = query.filter(Event.start_date >= datetime.utcnow())
+    elif past:
+        query = query.filter(Event.end_date < datetime.utcnow())
     
     # Sort by start date
-    events = query.order_by(Event.start_date).all()
+    events = query.order_by(Event.start_date.desc() if past else Event.start_date.asc()).all()
     
-    logger.info(f"Fetched {len(events)} events (approved_only={approved_only})")
+    logger.info(f"Fetched {len(events)} events (approved_only={approved_only}, past={past})")
     
     return events
 
@@ -1200,10 +1236,126 @@ async def get_event_details(
         EventRegistration.user_id == current_user.id
     ).first()
     
-    # Add registration status to response
-    event_dict = EventResponse.model_validate(event).model_dump()
-    event_dict["is_registered"] = registration is not None
-    return event_dict
+    # Get like status
+    like = db.query(EventLike).filter(
+        EventLike.event_id == event_id,
+        EventLike.user_id == current_user.id
+    ).first()
+    
+    # Count total likes
+    likes_count = db.query(EventLike).filter(
+        EventLike.event_id == event_id
+    ).count()
+    
+    response_dict = {
+        **event.__dict__,
+        "is_registered": registration is not None,
+        "is_liked": like is not None,
+        "likes_count": likes_count,
+        "organizer": event.organizer
+    }
+    
+    return response_dict
+
+@app.post("/events/{event_id}/like")
+async def like_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    
+    existing_like = db.query(EventLike).filter(
+        EventLike.event_id == event_id,
+        EventLike.user_id == current_user.id
+    ).first()
+    
+    if existing_like:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Event already liked"
+        )
+    
+    like = EventLike(event_id=event_id, user_id=current_user.id)
+    db.add(like)
+    db.commit()
+    
+    return {"message": "Event liked successfully"}
+
+@app.delete("/events/{event_id}/like")
+async def unlike_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    like = db.query(EventLike).filter(
+        EventLike.event_id == event_id,
+        EventLike.user_id == current_user.id
+    ).first()
+    
+    if not like:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Like not found"
+        )
+    
+    db.delete(like)
+    db.commit()
+    
+    return {"message": "Event unliked successfully"}
+
+@app.post("/events/{event_id}/report")
+async def report_event(
+    event_id: int,
+    report: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Event not found"
+        )
+    
+    # Check if user has already reported this event
+    existing_report = db.query(EventReport).filter(
+        EventReport.event_id == event_id,
+        EventReport.user_id == current_user.id
+    ).first()
+    
+    if existing_report:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You have already reported this event"
+        )
+    
+    report = EventReport(
+        event_id=event_id,
+        user_id=current_user.id,
+        reason=report.get("reason")
+    )
+    db.add(report)
+    db.commit()
+    
+    return {"message": "Event reported successfully"}
+
+@app.get("/user/events/organizing", response_model=List[EventResponse])
+async def get_user_organized_events(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all events organized by the current user"""
+    events = db.query(Event).filter(
+        Event.organizer_id == current_user.id
+    ).order_by(Event.start_date.desc()).all()
+    
+    return events
 
 if __name__ == "__main__":
     import uvicorn
