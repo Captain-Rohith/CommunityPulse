@@ -8,7 +8,7 @@ import jwt
 import os
 import logging
 from pydantic import BaseModel, EmailStr, Field, validator
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import uuid
@@ -18,13 +18,14 @@ import shutil
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 import requests
+from math import radians, sin, cos, sqrt, atan2
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-DATABASE_URL = "postgresql://postgres:rv@localhost:5432/CommunityPulse"
+DATABASE_URL = "postgresql://postgres:1234@localhost:5432/CommunityPulse"
 CLERK_SECRET_KEY = "sk_test_OTSjCgK3YwYAPsR9y8NDjbmJOAlDy6pogqa4MHxL3u"  # Replace with your Clerk secret key
 CLERK_PEM_PUBLIC_KEY = """
 -----BEGIN PUBLIC KEY-----
@@ -39,7 +40,7 @@ r/s7K4mjQRxZVr2cHBcYVKxiK+/gG8SvJ8MKhyE2PDP1ae6vZfB6YI9THUSMUfHF
 """  # Replace with your Clerk JWT public key
 
 # Define admin email
-ADMIN_EMAIL = "rohithvishwanath1789@gmail.com"
+ADMIN_EMAIL = "srivathsasmurthy2005@gmail.com"
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -100,6 +101,8 @@ class Event(Base):
     title = Column(String, index=True)
     description = Column(Text)
     location = Column(Text)  # This will store the formatted address
+    latitude = Column(String, nullable=True, default=None)  # Make nullable with default None
+    longitude = Column(String, nullable=True, default=None)  # Make nullable with default None
     category = Column(String, index=True)
     start_date = Column(DateTime, index=True)
     end_date = Column(DateTime, index=True)
@@ -174,6 +177,38 @@ class EventReport(Base):
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
+# Add latitude and longitude columns if they don't exist
+def add_location_columns():
+    db = SessionLocal()
+    try:
+        # Check if columns exist
+        result = db.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='events' AND column_name IN ('latitude', 'longitude')
+        """)).fetchall()
+        existing_columns = [row[0] for row in result]
+        
+        # Add latitude column if it doesn't exist
+        if 'latitude' not in existing_columns:
+            db.execute(text("ALTER TABLE events ADD COLUMN latitude VARCHAR"))
+            logger.info("Added latitude column to events table")
+        
+        # Add longitude column if it doesn't exist
+        if 'longitude' not in existing_columns:
+            db.execute(text("ALTER TABLE events ADD COLUMN longitude VARCHAR"))
+            logger.info("Added longitude column to events table")
+        
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error adding location columns: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+# Call the function to add columns
+add_location_columns()
+
 # Setup admin user on startup
 @app.on_event("startup")
 async def setup_admin():
@@ -220,6 +255,8 @@ class EventCreate(BaseModel):
     title: str
     description: str
     location: str
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
     category: str
     start_date: datetime
     end_date: datetime
@@ -230,6 +267,8 @@ class EventUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
     category: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
@@ -241,6 +280,8 @@ class EventResponse(BaseModel):
     title: str
     description: str
     location: str
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
     category: str
     start_date: datetime
     end_date: datetime
@@ -256,6 +297,7 @@ class EventResponse(BaseModel):
     organizer: UserResponse
     likes_count: int = 0
     is_liked: Optional[bool] = None
+    distance: Optional[float] = None  # Distance in kilometers
     
     class Config:
         from_attributes = True
@@ -413,7 +455,9 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 async def create_event(
     title: str = Form(...),
     description: str = Form(...),
-    location: str = Form(...),  # This will receive the formatted address from frontend
+    location: str = Form(...),
+    latitude: Optional[str] = Form(None),
+    longitude: Optional[str] = Form(None),
     category: str = Form(...),
     start_date: str = Form(...),
     end_date: str = Form(...),
@@ -434,6 +478,8 @@ async def create_event(
         title=title,
         description=description,
         location=location,
+        latitude=latitude,
+        longitude=longitude,
         category=category,
         start_date=start_date_dt,
         end_date=end_date_dt,
@@ -496,6 +542,46 @@ def get_events(
     
     return events
 
+@app.get("/events/nearby", response_model=List[EventResponse])
+async def get_nearby_events(
+    latitude: str,
+    longitude: str,
+    max_distance: float = 7.0,  # Default 7km radius
+    db: Session = Depends(get_db)
+):
+    """
+    Get events within a specified radius (in kilometers) from the given coordinates.
+    """
+    # Get all approved events
+    events = db.query(Event).filter(Event.is_approved == True).all()
+    
+    nearby_events = []
+    for event in events:
+        # Skip events without coordinates
+        if not event.latitude or not event.longitude:
+            continue
+            
+        try:
+            distance = calculate_distance(
+                latitude, longitude,
+                event.latitude, event.longitude
+            )
+            
+            if distance <= max_distance:
+                # Add distance to the event response
+                event_dict = EventResponse.model_validate(event).model_dump()
+                event_dict["distance"] = distance
+                nearby_events.append(event_dict)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error calculating distance for event {event.id}: {e}")
+            continue
+    
+    # Sort by distance
+    nearby_events.sort(key=lambda x: x["distance"])
+    
+    logger.info(f"Found {len(nearby_events)} events within {max_distance}km")
+    return nearby_events
+
 @app.get("/events/{event_id}", response_model=EventResponse)
 def get_event(event_id: int, db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id).first()
@@ -514,6 +600,8 @@ async def update_event(
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
+    latitude: Optional[str] = Form(None),
+    longitude: Optional[str] = Form(None),
     category: Optional[str] = Form(None),
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
@@ -546,6 +634,10 @@ async def update_event(
         event.description = description
     if location:
         event.location = location
+    if latitude:
+        event.latitude = latitude
+    if longitude:
+        event.longitude = longitude
     if category:
         event.category = category
     if start_date:
@@ -1356,6 +1448,30 @@ async def get_user_organized_events(
     ).order_by(Event.start_date.desc()).all()
     
     return events
+
+from math import radians, sin, cos, sqrt, atan2
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the distance between two points using the Haversine formula.
+    Returns distance in kilometers.
+    """
+    R = 6371  # Earth's radius in kilometers
+
+    # Convert latitude and longitude from strings to float
+    lat1, lon1, lat2, lon2 = map(float, [lat1, lon1, lat2, lon2])
+    
+    # Convert to radians
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    
+    # Haversine formula
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+    distance = R * c
+    
+    return round(distance, 2)
 
 if __name__ == "__main__":
     import uvicorn

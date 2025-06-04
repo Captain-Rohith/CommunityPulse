@@ -19,8 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const ADMIN_EMAIL = "rohithvishwanath1789@gmail.com";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+const ADMIN_EMAIL = "srivathsasmurthy2005@gmail.com";
 
 export default function AdminDashboard() {
   const [pendingEvents, setPendingEvents] = useState<any[]>([]);

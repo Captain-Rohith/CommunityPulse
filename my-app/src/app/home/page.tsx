@@ -29,8 +29,8 @@ import Link from "next/link";
 import axios from "axios";
 
 // API base URL
-const API_URL = "http://localhost:8000";
-const ADMIN_EMAIL = "rohithvishwanath1789@gmail.com";
+const API_URL = "http://localhost:8002";
+const ADMIN_EMAIL = "srivathsasmurthy2005@gmail.com";
 
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -46,6 +46,8 @@ export default function EventsPage() {
   const [pastEvents, setPastEvents] = useState<any[]>([]);
   const [showPastEvents, setShowPastEvents] = useState(false);
   const [loadingPastEvents, setLoadingPastEvents] = useState(false);
+  const [nearbyEvents, setNearbyEvents] = useState<any[]>([]);
+  const [loadingNearby, setLoadingNearby] = useState(false);
 
   // Check if user is admin
   useEffect(() => {
@@ -360,6 +362,51 @@ export default function EventsPage() {
     fetchPastEvents();
   }, [showPastEvents, category]);
 
+  // Fetch nearby events
+  useEffect(() => {
+    const fetchNearbyEvents = async () => {
+      try {
+        setLoadingNearby(true);
+        // Get user's location
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject);
+        });
+
+        const { latitude, longitude } = position.coords;
+        
+        // Fetch nearby events
+        const response = await axios.get(
+          `${API_URL}/events/nearby?latitude=${latitude}&longitude=${longitude}`
+        );
+
+        // Format the events data
+        const formattedEvents = response.data.map((event: any) => ({
+          id: event.id,
+          title: event.title,
+          date: new Date(event.start_date).toISOString().split("T")[0],
+          enddate: new Date(event.end_date).toISOString().split("T")[0],
+          location: event.location,
+          startTime: new Date(event.start_date).toTimeString().slice(0, 5),
+          endTime: new Date(event.end_date).toTimeString().slice(0, 5),
+          description: event.description,
+          category: event.category,
+          attendees: event.attendees_count,
+          image_path: event.image_path,
+          is_approved: event.is_approved,
+          distance: event.distance,
+        }));
+
+        setNearbyEvents(formattedEvents);
+      } catch (error) {
+        console.error("Error fetching nearby events:", error);
+      } finally {
+        setLoadingNearby(false);
+      }
+    };
+
+    fetchNearbyEvents();
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b">
@@ -583,6 +630,24 @@ export default function EventsPage() {
                     />
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+
+          {/* Near By Events Section */}
+          <div className="mb-12">
+            <h2 className="text-2xl font-bold mb-6">Near By Events</h2>
+            {loadingNearby ? (
+              <div className="text-center">Loading nearby events...</div>
+            ) : nearbyEvents.length > 0 ? (
+              <EventCardsGrid
+                events={nearbyEvents}
+                onMarkInterest={markInterest}
+                showDistance={true}
+              />
+            ) : (
+              <div className="text-center text-gray-500">
+                No nearby events found. Please enable location services to see events near you.
               </div>
             )}
           </div>

@@ -17,6 +17,7 @@ interface Event {
   image_path?: string;
   userInterested?: boolean;
   is_approved?: boolean;
+  distance?: number;
 }
 
 interface EventCardProps {
@@ -26,6 +27,7 @@ interface EventCardProps {
   showInterestButton?: boolean;
   showEditButton?: boolean;
   showApprovalStatus?: boolean;
+  showDistance?: boolean;
 }
 
 function EventCard({
@@ -35,11 +37,12 @@ function EventCard({
   showInterestButton = true,
   showEditButton = false,
   showApprovalStatus = false,
+  showDistance = false,
   ...props
 }: EventCardProps) {
   // Handle event date formatting
   interface FormatDateOptions extends Intl.DateTimeFormatOptions {}
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
   const formatDate = (dateString: string): string => {
     const options: FormatDateOptions = {
       weekday: "short",
@@ -143,7 +146,14 @@ function EventCard({
           <div className="space-y-2">
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <MapPin className="h-4 w-4" />
-              <span className="line-clamp-1">{event.location}</span>
+              <span className="line-clamp-1">
+                {event.location}
+                {showDistance && event.distance !== undefined && (
+                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                    {event.distance.toFixed(1)} km away
+                  </span>
+                )}
+              </span>
             </div>
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <Clock className="h-4 w-4" />
@@ -201,12 +211,14 @@ function EventCardsGrid({
   showInterestButton = true,
   showEditButton = false,
   showApprovalStatus = false,
+  showDistance = false,
 }: {
   events: Event[];
   onInterest?: (eventId: number) => void;
   showInterestButton?: boolean;
   showEditButton?: boolean;
   showApprovalStatus?: boolean;
+  showDistance?: boolean;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -218,6 +230,7 @@ function EventCardsGrid({
           showInterestButton={showInterestButton}
           showEditButton={showEditButton}
           showApprovalStatus={showApprovalStatus}
+          showDistance={showDistance}
         />
       ))}
     </div>
