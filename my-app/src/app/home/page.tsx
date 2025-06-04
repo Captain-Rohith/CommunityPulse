@@ -15,6 +15,7 @@ import {
   SignedOut,
   UserButton,
   useAuth,
+  useUser,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,18 +25,36 @@ import {
   MapPin,
   ChevronDown,
   ChevronUp,
+  Filter,
 } from "lucide-react";
 import Link from "next/link";
 import axios from "axios";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Check } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // API base URL
 const API_URL = "http://localhost:8000";
 const ADMIN_EMAIL = "rohithvishwanath1789@gmail.com";
 
+// Update the FilterType to be an object tracking multiple selections
+interface FilterState {
+  categories: string[];
+  showNearby: boolean;
+  showMyEvents: boolean;
+}
+
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [allEvents, setAllEvents] = useState<any[]>([]); // Store all fetched events
-  const [filteredEvents, setFilteredEvents] = useState<any[]>([]); // Store filtered events
+  const [allEvents, setAllEvents] = useState<any[]>([]);
+  const [filteredEvents, setFilteredEvents] = useState<any[]>([]);
   const [registeredEvents, setRegisteredEvents] = useState<any[]>([]);
   const [interestedEvents, setInterestedEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +67,12 @@ export default function EventsPage() {
   const [loadingPastEvents, setLoadingPastEvents] = useState(false);
   const [nearbyEvents, setNearbyEvents] = useState<any[]>([]);
   const [loadingNearby, setLoadingNearby] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    categories: [],
+    showNearby: false,
+    showMyEvents: false,
+  });
+  const { user } = useUser();
 
   // Check if user is admin
   useEffect(() => {
@@ -116,6 +141,8 @@ export default function EventsPage() {
             endTime: new Date(event.end_date).toTimeString().slice(0, 5),
             description: event.description,
             category: event.category,
+            type: event.type || "Free",
+            views: event.views || 0,
             attendees: event.attendees_count,
             image_path: event.image_path,
             is_approved: event.is_approved,
@@ -131,6 +158,8 @@ export default function EventsPage() {
             endTime: new Date(event.end_date).toTimeString().slice(0, 5),
             description: event.description,
             category: event.category,
+            type: event.type || "Free",
+            views: event.views || 0,
             attendees: event.attendees_count,
             image_path: event.image_path,
             is_approved: event.is_approved,
@@ -155,7 +184,6 @@ export default function EventsPage() {
 
         // Build query parameters
         const params = new URLSearchParams();
-        if (category) params.append("category", category);
         params.append("upcoming", "true");
         params.append("approved_only", "true");
 
@@ -175,9 +203,13 @@ export default function EventsPage() {
           endTime: new Date(event.end_date).toTimeString().slice(0, 5),
           description: event.description,
           category: event.category,
+          type: event.type || "Free",
+          views: event.views || 0,
           attendees: event.attendees_count,
           image_path: event.image_path,
           is_approved: event.is_approved,
+          organizer_id: event.organizer_id,
+          organizer: event.organizer,
         }));
 
         // Filter out events that user is already registered for or interested in
@@ -198,7 +230,7 @@ export default function EventsPage() {
     };
 
     fetchEvents();
-  }, [category, registeredEvents, interestedEvents]);
+  }, [registeredEvents, interestedEvents]);
 
   // Handle search and filtering
   useEffect(() => {
@@ -367,7 +399,6 @@ export default function EventsPage() {
     const fetchNearbyEvents = async () => {
       try {
         setLoadingNearby(true);
-        // Get user's location
         const position = await new Promise<GeolocationPosition>(
           (resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -381,7 +412,6 @@ export default function EventsPage() {
         const { latitude, longitude } = position.coords;
         console.log("User coordinates:", { latitude, longitude });
 
-        // Fetch nearby events
         const response = await axios.get(`${API_URL}/events/nearby`, {
           params: {
             latitude: latitude,
@@ -392,7 +422,6 @@ export default function EventsPage() {
 
         console.log("Nearby events response:", response.data);
 
-        // Format the events data
         const formattedEvents = response.data.map((event: any) => ({
           id: event.id,
           title: event.title,
@@ -403,9 +432,13 @@ export default function EventsPage() {
           endTime: new Date(event.end_date).toTimeString().slice(0, 5),
           description: event.description,
           category: event.category,
+          type: event.type || "Free",
+          views: event.views || 0,
           attendees: event.attendees_count,
           image_path: event.image_path,
           is_approved: event.is_approved,
+          organizer_id: event.organizer_id,
+          organizer: event.organizer,
           distance: event.distance,
         }));
 
@@ -424,6 +457,51 @@ export default function EventsPage() {
 
     fetchNearbyEvents();
   }, []);
+
+  // Update the applyFilter function to use Clerk ID
+  const applyFilter = (events: any[]) => {
+    const { user } = useUser();
+    if (!events) return [];
+
+    let filteredEvents = [...events];
+
+    // Log user and event data for debugging
+    if (filters.showMyEvents) {
+      console.log("Current user Clerk ID:", user?.id);
+      console.log(
+        "Events with organizer data:",
+        events.map((e) => ({
+          id: e.id,
+          title: e.title,
+          organizerClerkId: e.organizer?.clerk_id,
+        }))
+      );
+    }
+
+    // Apply category filters
+    if (filters.categories.length > 0) {
+      filteredEvents = filteredEvents.filter((event) =>
+        filters.categories.includes(event.category)
+      );
+    }
+
+    // Apply my events filter - match by Clerk ID
+    if (filters.showMyEvents && user?.id) {
+      filteredEvents = filteredEvents.filter(
+        (event) => event.organizer?.clerk_id === user.id
+      );
+    }
+
+    // Apply nearby filter
+    if (filters.showNearby) {
+      const nearbyIds = new Set(nearbyEvents.map((e) => e.id));
+      filteredEvents = filteredEvents.filter((event) =>
+        nearbyIds.has(event.id)
+      );
+    }
+
+    return filteredEvents;
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -492,6 +570,11 @@ export default function EventsPage() {
                       Events I'm Organizing
                     </Link>
                   </MenubarItem>
+                  <MenubarItem>
+                    <Link href="/dashboard" className="flex w-full">
+                      Organizer Dashboard
+                    </Link>
+                  </MenubarItem>
                 </SignedIn>
                 <SignedOut>
                   <MenubarItem>
@@ -504,18 +587,11 @@ export default function EventsPage() {
               <MenubarMenu>
                 <MenubarTrigger>Admin</MenubarTrigger>
                 <MenubarContent>
-                  <SignedIn>
-                    <MenubarItem>
-                      <Link href="/admind" className="flex w-full">
-                        Dashboard
-                      </Link>
-                    </MenubarItem>
-                    <MenubarItem>
-                      <Link href="/admind" className="flex w-full">
-                        Organizer Panel
-                      </Link>
-                    </MenubarItem>
-                  </SignedIn>
+                  <MenubarItem>
+                    <Link href="/admin" className="flex w-full">
+                      Admin Dashboard
+                    </Link>
+                  </MenubarItem>
                 </MenubarContent>
               </MenubarMenu>
             )}
@@ -550,16 +626,114 @@ export default function EventsPage() {
             className="flex-grow p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              className={`flex items-center gap-2 ${
-                !category ? "bg-primary/10" : ""
-              }`}
-              onClick={() => setCategory(null)}
-            >
-              <Calendar size={16} />
-              All Categories
-            </Button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="flex items-center gap-2">
+                  <Filter size={16} />
+                  {filters.categories.length === 0 &&
+                  !filters.showNearby &&
+                  !filters.showMyEvents ? (
+                    "All Events"
+                  ) : (
+                    <span className="flex items-center gap-1">
+                      {filters.categories.length > 0 &&
+                        `${filters.categories.length} Categories`}
+                      {filters.showNearby && "• Nearby"}
+                      {filters.showMyEvents && "• My Events"}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80">
+                <div className="space-y-4">
+                  <h4 className="font-medium leading-none">Filter Events</h4>
+                  <Separator />
+                  <div className="space-y-4">
+                    <div>
+                      <h5 className="mb-2 font-medium">Categories</h5>
+                      <div className="ml-2 space-y-2">
+                        {[
+                          "Garage Sale",
+                          "Sports Match",
+                          "Community Class",
+                          "Volunteer",
+                          "Exhibition",
+                          "Festival",
+                        ].map((cat) => (
+                          <div
+                            key={cat}
+                            className="flex items-center space-x-2"
+                          >
+                            <Checkbox
+                              id={`category-${cat}`}
+                              checked={filters.categories.includes(cat)}
+                              onCheckedChange={(checked) => {
+                                setFilters((prev) => ({
+                                  ...prev,
+                                  categories: checked
+                                    ? [...prev.categories, cat]
+                                    : prev.categories.filter((c) => c !== cat),
+                                }));
+                              }}
+                            />
+                            <label
+                              htmlFor={`category-${cat}`}
+                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                            >
+                              {cat}
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="nearby"
+                          checked={filters.showNearby}
+                          onCheckedChange={(checked) => {
+                            setFilters((prev) => ({
+                              ...prev,
+                              showNearby: checked as boolean,
+                            }));
+                          }}
+                        />
+                        <label
+                          htmlFor="nearby"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          Nearby Events
+                        </label>
+                      </div>
+
+                      <SignedIn>
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id="my-events"
+                            checked={filters.showMyEvents}
+                            onCheckedChange={(checked) => {
+                              setFilters((prev) => ({
+                                ...prev,
+                                showMyEvents: checked as boolean,
+                              }));
+                            }}
+                          />
+                          <label
+                            htmlFor="my-events"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                          >
+                            Events I'm Organizing
+                          </label>
+                        </div>
+                      </SignedIn>
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
 
             <Button variant="outline" className="flex items-center gap-2">
               <Users size={16} />
@@ -597,7 +771,11 @@ export default function EventsPage() {
             <h2 className="text-2xl font-bold mb-4">
               {searchTerm
                 ? `Search Results (${filteredEvents.length})`
-                : "Upcoming Events"}
+                : filters.categories.length === 0 &&
+                  !filters.showNearby &&
+                  !filters.showMyEvents
+                ? "All Events"
+                : `Filtered Events (${applyFilter(filteredEvents).length})`}
             </h2>
             {loading ? (
               <div className="text-center py-8">Loading...</div>
@@ -605,12 +783,13 @@ export default function EventsPage() {
               <div className="text-center py-8 text-muted-foreground">
                 {searchTerm
                   ? "No events found matching your search"
-                  : "No upcoming events available"}
+                  : "No events available"}
               </div>
             ) : (
               <EventCardsGrid
-                events={filteredEvents}
+                events={applyFilter(filteredEvents)}
                 onInterest={markInterest}
+                showDistance={filters.showNearby}
               />
             )}
           </div>
@@ -661,7 +840,7 @@ export default function EventsPage() {
               <EventCardsGrid
                 events={nearbyEvents}
                 onInterest={markInterest}
-                showDistance={true}
+                showDistance={filters.showNearby}
               />
             ) : (
               <div className="text-center text-gray-500">

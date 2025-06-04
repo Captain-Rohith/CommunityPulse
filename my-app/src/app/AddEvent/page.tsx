@@ -19,6 +19,14 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@clerk/nextjs";
 import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 // Define the form schema using Zod
 const eventSchema = z
@@ -148,6 +156,20 @@ class ErrorBoundary extends React.Component<
   }
 }
 
+// Add type field to the form data interface
+interface FormData {
+  title: string;
+  description: string;
+  location: string;
+  category: string;
+  type: string; // Add type field
+  startDate: string;
+  endDate: string;
+  registrationStart: string;
+  registrationEnd: string;
+  image?: File;
+}
+
 export default function AddEventPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -156,6 +178,17 @@ export default function AddEventPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isResolvingLocation, setIsResolvingLocation] = useState(false);
+  const [formData, setFormData] = useState<FormData>({
+    title: "",
+    description: "",
+    location: "",
+    category: "",
+    type: "Free", // Add default value
+    startDate: "",
+    endDate: "",
+    registrationStart: "",
+    registrationEnd: "",
+  });
 
   // Initialize form
   const form = useForm<EventFormValues>({
@@ -605,6 +638,25 @@ export default function AddEventPage() {
                         </FormItem>
                       )}
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="type">Event Type</Label>
+                    <Select
+                      name="type"
+                      value={formData.type}
+                      onValueChange={(value: string) =>
+                        setFormData({ ...formData, type: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select event type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Free">Free</SelectItem>
+                        <SelectItem value="Paid">Paid</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

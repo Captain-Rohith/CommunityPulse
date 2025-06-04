@@ -1,7 +1,14 @@
 import * as React from "react";
-import { Calendar, MapPin, Clock, Users, Tag } from "lucide-react";
+import { Calendar, MapPin, Clock, Users, Tag, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 interface Event {
   id: number;
@@ -18,6 +25,8 @@ interface Event {
   userInterested?: boolean;
   is_approved?: boolean;
   distance?: number;
+  type: string;
+  views?: number;
 }
 
 interface EventCardProps {
@@ -123,7 +132,8 @@ function EventCard({
               </div>
             )}
             <div className="bg-white/90 text-xs font-medium px-2 py-1 rounded-full">
-              {event.category}
+              {event.category} • {event.type !== "Free" && "₹"}
+              {event.type}
             </div>
           </div>
         </div>
@@ -131,9 +141,23 @@ function EventCard({
         <div className="p-4 space-y-4 flex-1 flex flex-col">
           {/* Title and date */}
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold line-clamp-2">
-              {event.title}
-            </h3>
+            <div className="flex justify-between items-start">
+              <h3 className="text-lg font-semibold line-clamp-2">
+                {event.title}
+              </h3>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-sm px-2 py-1 rounded-full ${
+                    event.type === "Free"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-blue-100 text-blue-800"
+                  }`}
+                >
+                  {event.type !== "Free" && "₹"}
+                  {event.type}
+                </span>
+              </div>
+            </div>
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <Calendar className="h-4 w-4" />
               <span>
@@ -160,6 +184,10 @@ function EventCard({
               <span>
                 {formatTime(event.startTime)} - {formatTime(event.endTime)}
               </span>
+            </div>
+            <div className="flex items-center text-muted-foreground text-sm gap-1.5">
+              <Eye className="h-4 w-4" />
+              <span>{event.views || 0} views</span>
             </div>
           </div>
 

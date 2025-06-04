@@ -23,6 +23,7 @@ import {
   Linkedin,
   Copy,
   Check,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -62,6 +63,8 @@ interface Event {
   };
   likes_count: number;
   is_liked: boolean;
+  type: string;
+  views: number;
 }
 
 interface RegistrationStatus {
@@ -580,45 +583,25 @@ export default function EventDetailsPage() {
           <div className="w-full lg:w-[80%] space-y-4 lg:space-y-8">
             <div className="bg-background rounded-xl shadow-sm p-4 md:p-6 lg:p-8 space-y-4">
               <div className="space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight break-words">
-                    {event?.title}
-                  </h1>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowShareDialog(true)}
-                      className="hover:bg-primary/10"
-                    >
-                      <Share2 className="h-5 w-5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleLikeToggle}
-                      className={`hover:bg-primary/10 ${
-                        isLiked ? "text-red-500" : ""
+                <div className="flex justify-between items-start">
+                  <h1 className="text-4xl font-bold">{event.title}</h1>
+                  <div className="flex flex-col items-end gap-2">
+                    <span
+                      className={`text-sm px-3 py-1.5 rounded-full ${
+                        event.type === "Free"
+                          ? "bg-green-100 text-green-800"
+                          : "bg-blue-100 text-blue-800"
                       }`}
                     >
-                      {isLiked ? (
-                        <Heart className="h-5 w-5 fill-current" />
-                      ) : (
-                        <HeartOff className="h-5 w-5" />
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowReportDialog(true)}
-                      className="hover:bg-primary/10"
-                    >
-                      <Flag className="h-5 w-5" />
-                    </Button>
+                      {event.type}
+                    </span>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Eye className="h-4 w-4" />
+                      <span>{event.views} views</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Category and likes */}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary">
                     <Tag className="w-4 h-4 mr-1" />
@@ -761,6 +744,14 @@ export default function EventDetailsPage() {
                           }
                         >
                           Edit Event
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => router.push(`/dashboard/${params.id}`)}
+                        >
+                          View Dashboard
                         </Button>
                         <Button
                           variant="destructive"

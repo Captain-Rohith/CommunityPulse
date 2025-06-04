@@ -8,7 +8,7 @@ import jwt
 import os
 import logging
 from pydantic import BaseModel, EmailStr, Field, validator
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, text, Float
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, text, Float, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import uuid
@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 import requests
 from math import radians, sin, cos, sqrt, atan2
 import googlemaps
+from sqlalchemy import inspect
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +48,7 @@ ADMIN_EMAIL = "rohithvishwanath1789@gmail.com"
 import googlemaps
 
 # Add after other configuration constants
-GOOGLE_MAPS_API_KEY = "AIzaSyD69HwBjD9rZvbVVgumIWVG94TSIiQJDd0"  # Replace with your actual API key
+GOOGLE_MAPS_API_KEY = "AIzaSyD69HwBjD9rZvbVVgumIWVG94TSIiQJDd0" 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # Database setup
@@ -112,6 +113,8 @@ class Event(Base):
     latitude = Column(Float, nullable=True)  # Changed to Float
     longitude = Column(Float, nullable=True)  # Changed to Float
     category = Column(String, index=True)
+    type = Column(String, default="Free")  # New column for reg fee/Free
+    views = Column(Integer, default=0)  # New column for view count
     start_date = Column(DateTime, index=True)
     end_date = Column(DateTime, index=True)
     registration_start = Column(DateTime)
@@ -182,6 +185,14 @@ class EventReport(Base):
     event = relationship("Event", back_populates="reports")
     user = relationship("User", back_populates="event_reports")
     
+class EventView(Base):
+    __tablename__ = "event_views"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    viewed_at = Column(DateTime, default=datetime.utcnow)
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -266,6 +277,7 @@ class EventCreate(BaseModel):
     latitude: Optional[str] = None
     longitude: Optional[str] = None
     category: str
+    type: str = "Free"  # New field with default value
     start_date: datetime
     end_date: datetime
     registration_start: datetime
@@ -278,6 +290,7 @@ class EventUpdate(BaseModel):
     latitude: Optional[str] = None
     longitude: Optional[str] = None
     category: Optional[str] = None
+    type: Optional[str] = None  # New field
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     registration_start: Optional[datetime] = None
@@ -291,6 +304,8 @@ class EventResponse(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     category: str
+    type: str  # New field
+    views: int  # New field
     start_date: datetime
     end_date: datetime
     registration_start: datetime
@@ -467,6 +482,7 @@ async def create_event(
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
     category: str = Form(...),
+    type: str = Form("Free"),  # New parameter
     start_date: str = Form(...),
     end_date: str = Form(...),
     registration_start: str = Form(...),
@@ -497,6 +513,7 @@ async def create_event(
         latitude=latitude,
         longitude=longitude,
         category=category,
+        type=type,  # Add type field
         start_date=start_date_dt,
         end_date=end_date_dt,
         registration_start=registration_start_dt,
@@ -627,6 +644,7 @@ async def update_event(
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
     category: Optional[str] = Form(None),
+    type: Optional[str] = Form(None),  # New field
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
     registration_start: Optional[str] = Form(None),
@@ -671,6 +689,8 @@ async def update_event(
         event.longitude = longitude
     if category:
         event.category = category
+    if type:
+        event.type = type
     if start_date:
         event.start_date = datetime.fromisoformat(start_date)
     if end_date:
@@ -1342,7 +1362,32 @@ async def get_event_details(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     
-    # Check if user is registered
+    # Create a view tracking table if it doesn't exist
+    if not inspect(engine).has_table("event_views"):
+        Base.metadata.create_all(bind=engine)
+    
+    # Check if user has already viewed this event in the last 24 hours
+    last_24h = datetime.utcnow() - timedelta(hours=24)
+    existing_view = db.query(EventView).filter(
+        EventView.event_id == event_id,
+        EventView.user_id == current_user.id,
+        EventView.viewed_at >= last_24h
+    ).first()
+    
+    if not existing_view:
+        # Create new view record
+        new_view = EventView(
+            event_id=event_id,
+            user_id=current_user.id,
+            viewed_at=datetime.utcnow()
+        )
+        db.add(new_view)
+        
+        # Increment view count
+        event.views += 1
+        db.commit()
+    
+    # Get registration status
     registration = db.query(EventRegistration).filter(
         EventRegistration.event_id == event_id,
         EventRegistration.user_id == current_user.id
@@ -1359,8 +1404,27 @@ async def get_event_details(
         EventLike.event_id == event_id
     ).count()
     
+    # Create response dictionary with all required fields
     response_dict = {
-        **event.__dict__,
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "location": event.location,
+        "latitude": event.latitude,
+        "longitude": event.longitude,
+        "category": event.category,
+        "type": event.type,
+        "views": event.views,
+        "start_date": event.start_date,
+        "end_date": event.end_date,
+        "registration_start": event.registration_start,
+        "registration_end": event.registration_end,
+        "image_path": event.image_path,
+        "organizer_id": event.organizer_id,
+        "is_approved": event.is_approved,
+        "created_at": event.created_at,
+        "updated_at": event.updated_at,
+        "attendees_count": event.attendees_count,
         "is_registered": registration is not None,
         "is_liked": like is not None,
         "likes_count": likes_count,
@@ -1468,6 +1532,58 @@ async def get_user_organized_events(
     ).order_by(Event.start_date.desc()).all()
     
     return events
+
+@app.get("/events/{event_id}/dashboard")
+async def get_event_dashboard(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Check if user is authorized (admin or event organizer)
+    if not current_user.is_admin and event.organizer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view dashboard")
+    
+    # Get event statistics
+    likes_count = db.query(EventLike).filter(EventLike.event_id == event_id).count()
+    registrations_count = db.query(EventRegistration).filter(
+        EventRegistration.event_id == event_id,
+        EventRegistration.status == "registered"
+    ).count()
+    interested_count = db.query(EventRegistration).filter(
+        EventRegistration.event_id == event_id,
+        EventRegistration.status == "interested"
+    ).count()
+    
+    # Get registration trend (last 7 days)
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    daily_registrations = db.query(
+        func.date(EventRegistration.registered_at).label('date'),
+        func.count().label('count')
+    ).filter(
+        EventRegistration.event_id == event_id,
+        EventRegistration.registered_at >= seven_days_ago
+    ).group_by(
+        func.date(EventRegistration.registered_at)
+    ).all()
+    
+    return {
+        "event_id": event_id,
+        "title": event.title,
+        "views": event.views,
+        "likes": likes_count,
+        "registrations": registrations_count,
+        "interested": interested_count,
+        "daily_registrations": [
+            {"date": str(day.date), "count": day.count}
+            for day in daily_registrations
+        ],
+        "created_at": event.created_at,
+        "last_updated": event.updated_at
+    }
 
 from math import radians, sin, cos, sqrt, atan2
 
