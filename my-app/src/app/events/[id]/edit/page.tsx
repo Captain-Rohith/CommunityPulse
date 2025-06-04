@@ -20,7 +20,7 @@ import {
 import { useAuth } from "@clerk/nextjs";
 import { toast } from "sonner";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Define the form schema using Zod
 const eventSchema = z

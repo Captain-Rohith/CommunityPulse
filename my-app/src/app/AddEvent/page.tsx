@@ -422,7 +422,7 @@ export default function AddEventPage() {
         }
       });
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const response = await fetch(`${apiUrl}/events`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },

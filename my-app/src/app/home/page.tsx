@@ -29,8 +29,8 @@ import Link from "next/link";
 import axios from "axios";
 
 // API base URL
-const API_URL = "http://localhost:8002";
-const ADMIN_EMAIL = "srivathsasmurthy2005@gmail.com";
+const API_URL = "http://localhost:8000";
+const ADMIN_EMAIL = "rohithvishwanath1789@gmail.com";
 
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -368,16 +368,29 @@ export default function EventsPage() {
       try {
         setLoadingNearby(true);
         // Get user's location
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject);
-        });
+        const position = await new Promise<GeolocationPosition>(
+          (resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 5000,
+              maximumAge: 0,
+            });
+          }
+        );
 
         const { latitude, longitude } = position.coords;
-        
+        console.log("User coordinates:", { latitude, longitude });
+
         // Fetch nearby events
-        const response = await axios.get(
-          `${API_URL}/events/nearby?latitude=${latitude}&longitude=${longitude}`
-        );
+        const response = await axios.get(`${API_URL}/events/nearby`, {
+          params: {
+            latitude: latitude,
+            longitude: longitude,
+            max_distance: 10.0,
+          },
+        });
+
+        console.log("Nearby events response:", response.data);
 
         // Format the events data
         const formattedEvents = response.data.map((event: any) => ({
@@ -397,8 +410,13 @@ export default function EventsPage() {
         }));
 
         setNearbyEvents(formattedEvents);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error fetching nearby events:", error);
+        if (error.name === "GeolocationPositionError") {
+          console.error("Geolocation error:", error.message);
+        } else if (error.response) {
+          console.error("API error:", error.response.data);
+        }
       } finally {
         setLoadingNearby(false);
       }
@@ -642,12 +660,13 @@ export default function EventsPage() {
             ) : nearbyEvents.length > 0 ? (
               <EventCardsGrid
                 events={nearbyEvents}
-                onMarkInterest={markInterest}
+                onInterest={markInterest}
                 showDistance={true}
               />
             ) : (
               <div className="text-center text-gray-500">
-                No nearby events found. Please enable location services to see events near you.
+                No nearby events found. Please enable location services to see
+                events near you.
               </div>
             )}
           </div>

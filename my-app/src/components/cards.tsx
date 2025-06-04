@@ -42,7 +42,7 @@ function EventCard({
 }: EventCardProps) {
   // Handle event date formatting
   interface FormatDateOptions extends Intl.DateTimeFormatOptions {}
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   const formatDate = (dateString: string): string => {
     const options: FormatDateOptions = {
       weekday: "short",

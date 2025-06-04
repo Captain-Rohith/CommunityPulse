@@ -2,13 +2,13 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from typing import List, Optional, Annotated
+from typing import List, Optional, Annotated, Tuple
 from datetime import datetime, timedelta
 import jwt
 import os
 import logging
 from pydantic import BaseModel, EmailStr, Field, validator
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, text, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import uuid
@@ -19,13 +19,14 @@ from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 import requests
 from math import radians, sin, cos, sqrt, atan2
+import googlemaps
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-DATABASE_URL = "postgresql://postgres:1234@localhost:5432/CommunityPulse"
+DATABASE_URL = "postgresql://postgres:rv@localhost:5432/CommunityPulse"
 CLERK_SECRET_KEY = "sk_test_OTSjCgK3YwYAPsR9y8NDjbmJOAlDy6pogqa4MHxL3u"  # Replace with your Clerk secret key
 CLERK_PEM_PUBLIC_KEY = """
 -----BEGIN PUBLIC KEY-----
@@ -40,7 +41,14 @@ r/s7K4mjQRxZVr2cHBcYVKxiK+/gG8SvJ8MKhyE2PDP1ae6vZfB6YI9THUSMUfHF
 """  # Replace with your Clerk JWT public key
 
 # Define admin email
-ADMIN_EMAIL = "srivathsasmurthy2005@gmail.com"
+ADMIN_EMAIL = "rohithvishwanath1789@gmail.com"
+
+# Add after other imports
+import googlemaps
+
+# Add after other configuration constants
+GOOGLE_MAPS_API_KEY = "AIzaSyD69HwBjD9rZvbVVgumIWVG94TSIiQJDd0"  # Replace with your actual API key
+gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -101,8 +109,8 @@ class Event(Base):
     title = Column(String, index=True)
     description = Column(Text)
     location = Column(Text)  # This will store the formatted address
-    latitude = Column(String, nullable=True, default=None)  # Make nullable with default None
-    longitude = Column(String, nullable=True, default=None)  # Make nullable with default None
+    latitude = Column(Float, nullable=True)  # Changed to Float
+    longitude = Column(Float, nullable=True)  # Changed to Float
     category = Column(String, index=True)
     start_date = Column(DateTime, index=True)
     end_date = Column(DateTime, index=True)
@@ -191,12 +199,12 @@ def add_location_columns():
         
         # Add latitude column if it doesn't exist
         if 'latitude' not in existing_columns:
-            db.execute(text("ALTER TABLE events ADD COLUMN latitude VARCHAR"))
+            db.execute(text("ALTER TABLE events ADD COLUMN latitude FLOAT"))
             logger.info("Added latitude column to events table")
         
         # Add longitude column if it doesn't exist
         if 'longitude' not in existing_columns:
-            db.execute(text("ALTER TABLE events ADD COLUMN longitude VARCHAR"))
+            db.execute(text("ALTER TABLE events ADD COLUMN longitude FLOAT"))
             logger.info("Added longitude column to events table")
         
         db.commit()
@@ -280,8 +288,8 @@ class EventResponse(BaseModel):
     title: str
     description: str
     location: str
-    latitude: Optional[str] = None
-    longitude: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     category: str
     start_date: datetime
     end_date: datetime
@@ -456,8 +464,8 @@ async def create_event(
     title: str = Form(...),
     description: str = Form(...),
     location: str = Form(...),
-    latitude: Optional[str] = Form(None),
-    longitude: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
     category: str = Form(...),
     start_date: str = Form(...),
     end_date: str = Form(...),
@@ -473,6 +481,14 @@ async def create_event(
     registration_start_dt = datetime.fromisoformat(registration_start)
     registration_end_dt = datetime.fromisoformat(registration_end)
     
+    # Get coordinates from location if not provided
+    if not latitude or not longitude:
+        lat, lng = get_coordinates_from_location(location)
+        if lat and lng:
+            latitude = lat
+            longitude = lng
+            logger.info(f"Using geocoded coordinates for location {location}: ({lat}, {lng})")
+    
     # Create event
     db_event = Event(
         title=title,
@@ -486,7 +502,7 @@ async def create_event(
         registration_start=registration_start_dt,
         registration_end=registration_end_dt,
         organizer_id=current_user.id,
-        is_approved=current_user.is_verified_organizer,  # Auto-approve for verified organizers
+        is_approved=current_user.is_verified_organizer,
         attendees_count=0
     )
     
@@ -507,7 +523,7 @@ async def create_event(
     db.commit()
     db.refresh(db_event)
     
-    logger.info(f"Created event: {db_event.id}, approved: {db_event.is_approved}")
+    logger.info(f"Created event: {db_event.id}, approved: {db_event.is_approved}, coordinates: ({db_event.latitude}, {db_event.longitude})")
     
     return db_event
 
@@ -544,42 +560,50 @@ def get_events(
 
 @app.get("/events/nearby", response_model=List[EventResponse])
 async def get_nearby_events(
-    latitude: str,
-    longitude: str,
-    max_distance: float = 7.0,  # Default 7km radius
+    latitude: float,  # Changed to float
+    longitude: float,  # Changed to float
+    max_distance: float = 10.0,
     db: Session = Depends(get_db)
 ):
     """
     Get events within a specified radius (in kilometers) from the given coordinates.
     """
-    # Get all approved events
-    events = db.query(Event).filter(Event.is_approved == True).all()
+    logger.info(f"Fetching nearby events. User coordinates: lat={latitude}, lon={longitude}")
+    
+    # Get all approved events with coordinates
+    events = db.query(Event).filter(
+        Event.is_approved == True,
+        Event.latitude.isnot(None),
+        Event.longitude.isnot(None)
+    ).all()
+    
+    logger.info(f"Found {len(events)} total approved events with coordinates")
     
     nearby_events = []
+    
     for event in events:
-        # Skip events without coordinates
-        if not event.latitude or not event.longitude:
-            continue
-            
         try:
             distance = calculate_distance(
-                latitude, longitude,
-                event.latitude, event.longitude
+                str(latitude), str(longitude),  # Convert to string for calculate_distance
+                str(event.latitude), str(event.longitude)
             )
             
+            logger.info(f"Event {event.id} ({event.title}) - Distance: {distance}km")
+            
             if distance <= max_distance:
-                # Add distance to the event response
                 event_dict = EventResponse.model_validate(event).model_dump()
-                event_dict["distance"] = distance
+                event_dict["distance"] = round(distance, 2)  # Round to 2 decimal places
                 nearby_events.append(event_dict)
+                logger.info(f"Added event {event.id} to nearby events (distance: {distance}km)")
         except (ValueError, TypeError) as e:
             logger.error(f"Error calculating distance for event {event.id}: {e}")
             continue
     
+    logger.info(f"Found {len(nearby_events)} nearby events within {max_distance}km")
+    
     # Sort by distance
     nearby_events.sort(key=lambda x: x["distance"])
     
-    logger.info(f"Found {len(nearby_events)} events within {max_distance}km")
     return nearby_events
 
 @app.get("/events/{event_id}", response_model=EventResponse)
@@ -600,8 +624,8 @@ async def update_event(
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
-    latitude: Optional[str] = Form(None),
-    longitude: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None),
+    longitude: Optional[float] = Form(None),
     category: Optional[str] = Form(None),
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
@@ -634,9 +658,16 @@ async def update_event(
         event.description = description
     if location:
         event.location = location
-    if latitude:
+        # If location is updated, try to get new coordinates
+        if not latitude and not longitude:
+            lat, lng = get_coordinates_from_location(location)
+            if lat and lng:
+                event.latitude = lat
+                event.longitude = lng
+                logger.info(f"Updated coordinates for location {location}: ({lat}, {lng})")
+    if latitude is not None:
         event.latitude = latitude
-    if longitude:
+    if longitude is not None:
         event.longitude = longitude
     if category:
         event.category = category
@@ -648,10 +679,6 @@ async def update_event(
         event.registration_start = datetime.fromisoformat(registration_start)
     if registration_end:
         event.registration_end = datetime.fromisoformat(registration_end)
-    
-    # Non-verified organizers need re-approval after updates
-    if not current_user.is_verified_organizer and not current_user.is_admin:
-        event.is_approved = False
     
     # Handle image upload if provided
     if image:
@@ -673,21 +700,14 @@ async def update_event(
     # Update timestamp
     event.updated_at = datetime.utcnow()
     
+    # Non-verified organizers need re-approval after updates
+    if not current_user.is_verified_organizer and not current_user.is_admin:
+        event.is_approved = False
+    
     db.commit()
     db.refresh(event)
     
-    # Create notifications for registered users about event update
-    for registration in event.registrations:
-        notification = Notification(
-            event_id=event.id,
-            user_id=registration.user_id,
-            title="Event Updated",
-            message=f"The event '{event.title}' you registered for has been updated.",
-            notification_type="update"
-        )
-        db.add(notification)
-    
-    db.commit()
+    logger.info(f"Updated event {event.id}, new coordinates: ({event.latitude}, {event.longitude})")
     
     return event
 
@@ -1472,6 +1492,29 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     distance = R * c
     
     return round(distance, 2)
+
+def get_coordinates_from_location(location: str) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Get latitude and longitude from a location string using Google Maps Geocoding API.
+    Returns a tuple of (latitude, longitude) or (None, None) if geocoding fails.
+    """
+    try:
+        # Geocode the location
+        geocode_result = gmaps.geocode(location)
+        
+        if geocode_result and len(geocode_result) > 0:
+            location_data = geocode_result[0]['geometry']['location']
+            latitude = location_data['lat']
+            longitude = location_data['lng']
+            logger.info(f"Successfully geocoded location: {location} -> ({latitude}, {longitude})")
+            return latitude, longitude
+        else:
+            logger.warning(f"No geocoding results found for location: {location}")
+            return None, None
+            
+    except Exception as e:
+        logger.error(f"Error geocoding location {location}: {str(e)}")
+        return None, None
 
 if __name__ == "__main__":
     import uvicorn

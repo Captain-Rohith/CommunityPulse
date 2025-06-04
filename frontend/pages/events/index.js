@@ -9,7 +9,7 @@ export default function EventsPage() {
 
   // Fetch upcoming events
   useEffect(() => {
-    fetch("http://localhost:8002/events?upcoming=true")
+    fetch("http://localhost:8000/events?upcoming=true")
       .then((res) => res.json())
       .then(setUpcomingEvents)
       .finally(() => setLoading(false));
@@ -26,7 +26,7 @@ export default function EventsPage() {
       (position) => {
         const lat = position.coords.latitude;
         const lon = position.coords.longitude;
-        fetch(`http://localhost:8002/events/nearby?latitude=${lat}&longitude=${lon}`)
+        fetch(`http://localhost:8000/events/nearby?latitude=${lat}&longitude=${lon}`)
           .then((res) => res.json())
           .then(setNearbyEvents)
           .catch(() => setNearbyEvents([]));
