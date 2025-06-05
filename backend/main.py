@@ -192,7 +192,7 @@ class EventView(Base):
     event_id = Column(Integer, ForeignKey("events.id", ondelete="CASCADE"))
     user_id = Column(Integer, ForeignKey("users.id"))
     viewed_at = Column(DateTime, default=datetime.utcnow)
-
+    
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -479,10 +479,10 @@ async def create_event(
     title: str = Form(...),
     description: str = Form(...),
     location: str = Form(...),
-    latitude: Optional[float] = Form(None),
-    longitude: Optional[float] = Form(None),
+    latitude: Optional[float] = Form(default=None),
+    longitude: Optional[float] = Form(default=None),
     category: str = Form(...),
-    type: str = Form("Free"),  # New parameter
+    type: str = Form("Free"),
     start_date: str = Form(...),
     end_date: str = Form(...),
     registration_start: str = Form(...),
@@ -491,19 +491,37 @@ async def create_event(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    # Parse datetime strings
-    start_date_dt = datetime.fromisoformat(start_date)
-    end_date_dt = datetime.fromisoformat(end_date)
-    registration_start_dt = datetime.fromisoformat(registration_start)
-    registration_end_dt = datetime.fromisoformat(registration_end)
+    # Log the incoming request data
+    logger.info(f"Creating event - Received dates: start_date={start_date}, end_date={end_date}, reg_start={registration_start}, reg_end={registration_end}")
+    logger.info(f"Received coordinates: lat={latitude}, lng={longitude}")
     
-    # Get coordinates from location if not provided
-    if not latitude or not longitude:
+    try:
+        # Parse datetime strings
+        start_date_dt = datetime.fromisoformat(start_date)
+        end_date_dt = datetime.fromisoformat(end_date)
+        registration_start_dt = datetime.fromisoformat(registration_start)
+        registration_end_dt = datetime.fromisoformat(registration_end)
+        
+        logger.info(f"Parsed dates: start={start_date_dt}, end={end_date_dt}, reg_start={registration_start_dt}, reg_end={registration_end_dt}")
+    except ValueError as e:
+        logger.error(f"Date parsing error: {str(e)}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid date format: {str(e)}"
+        )
+    
+    # Get coordinates from location if not provided or invalid
+    if latitude is None or longitude is None:
         lat, lng = get_coordinates_from_location(location)
         if lat and lng:
             latitude = lat
             longitude = lng
             logger.info(f"Using geocoded coordinates for location {location}: ({lat}, {lng})")
+        else:
+            # If geocoding fails, set to None
+            latitude = None
+            longitude = None
+            logger.warning(f"Could not geocode coordinates for location: {location}")
     
     # Create event
     db_event = Event(
@@ -513,7 +531,7 @@ async def create_event(
         latitude=latitude,
         longitude=longitude,
         category=category,
-        type=type,  # Add type field
+        type=type,
         start_date=start_date_dt,
         end_date=end_date_dt,
         registration_start=registration_start_dt,

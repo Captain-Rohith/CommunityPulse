@@ -19,6 +19,15 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@clerk/nextjs";
 import { toast } from "sonner";
+import { LocationAutocomplete } from "@/components/LocationAutocomplete";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { MainLayout } from "@/components/layouts/MainLayout";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -28,6 +37,13 @@ const eventSchema = z
     title: z.string().min(1, "Title is required"),
     description: z.string().min(1, "Description is required"),
     location: z.string().min(1, "Location is required"),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    type: z.string().refine((val) => {
+      if (val.toLowerCase() === "free") return true;
+      const price = parseInt(val);
+      return !isNaN(price) && price >= 50;
+    }, "Type must be 'Free' or a price of at least ₹50"),
     category: z.enum(
       [
         "Garage Sale",
@@ -125,6 +141,9 @@ export default function EditEventPage() {
       title: "",
       description: "",
       location: "",
+      type: "Free",
+      latitude: undefined,
+      longitude: undefined,
       category: "Community Class",
       start_date: "",
       end_date: "",
@@ -182,6 +201,9 @@ export default function EditEventPage() {
           title: data.title,
           description: data.description,
           location: data.location,
+          type: data.type || "Free",
+          latitude: data.latitude,
+          longitude: data.longitude,
           category: data.category,
           start_date: formatDate(data.start_date),
           end_date: formatDate(data.end_date),
@@ -401,7 +423,10 @@ export default function EditEventPage() {
       formData.append("title", values.title);
       formData.append("description", values.description);
       formData.append("location", values.location);
+      formData.append("latitude", values.latitude?.toString() || "");
+      formData.append("longitude", values.longitude?.toString() || "");
       formData.append("category", values.category);
+      formData.append("type", values.type);
       formData.append("start_date", values.start_date);
       formData.append("end_date", values.end_date);
       formData.append("registration_start", values.registration_start);
@@ -440,72 +465,132 @@ export default function EditEventPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <Link href="/home" style={{ textDecoration: "none" }}>
-        <Button>Home</Button>
-      </Link>
+    <MainLayout>
+      <div className="container mx-auto px-4 py-8">
+        <Link href="/home" style={{ textDecoration: "none" }}>
+          <Button>Home</Button>
+        </Link>
 
-      <Card className="max-w-4xl mx-auto">
-        <CardHeader>
-          <h1 className="text-2xl font-bold">Edit Event</h1>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form
-              id="event-form"
-              onSubmit={form.handleSubmit(onSubmit)}
-              className="space-y-6"
-            >
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Title</FormLabel>
-                    <FormControl>
-                      <input
-                        {...field}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                        placeholder="Event title"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+        <Card className="max-w-4xl mx-auto">
+          <CardHeader>
+            <h1 className="text-2xl font-bold">Edit Event</h1>
+          </CardHeader>
+          <CardContent>
+            <Form {...form}>
+              <form
+                id="event-form"
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-6"
+              >
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title</FormLabel>
+                      <FormControl>
+                        <input
+                          {...field}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
+                          placeholder="Event title"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <textarea
-                        {...field}
-                        className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 min-h-[100px]"
-                        placeholder="Event description"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Event Type</FormLabel>
+                      <FormControl>
+                        <div className="flex gap-2">
+                          <Select
+                            onValueChange={(value) => {
+                              if (value === "paid") {
+                                // When switching to paid, set a default price
+                                field.onChange("50");
+                              } else {
+                                field.onChange("Free");
+                              }
+                            }}
+                            value={
+                              field.value.toLowerCase() === "free"
+                                ? "free"
+                                : "paid"
+                            }
+                          >
+                            <SelectTrigger className="w-[120px]">
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="free">Free</SelectItem>
+                              <SelectItem value="paid">Paid</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {field.value.toLowerCase() !== "free" && (
+                            <div className="flex-1">
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                                  ₹
+                                </span>
+                                <input
+                                  type="number"
+                                  min="50"
+                                  value={field.value}
+                                  onChange={(e) =>
+                                    field.onChange(e.target.value)
+                                  }
+                                  className="flex h-10 w-full rounded-md border border-input bg-background px-8 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                  placeholder="Enter price"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <textarea
+                          {...field}
+                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 min-h-[100px]"
+                          placeholder="Event description"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 <FormField
                   control={form.control}
                   name="location"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Location</FormLabel>
-                      <FormControl>
-                        <input
-                          {...field}
-                          className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                          placeholder="Event location"
-                        />
-                      </FormControl>
+                      <LocationAutocomplete
+                        value={field.value}
+                        onChange={(value, lat, lng) => {
+                          field.onChange(value);
+                          if (lat && lng) {
+                            form.setValue("latitude", lat);
+                            form.setValue("longitude", lng);
+                          }
+                        }}
+                        error={form.formState.errors.location?.message}
+                      />
                       <FormMessage />
                     </FormItem>
                   )}
@@ -536,178 +621,178 @@ export default function EditEventPage() {
                     </FormItem>
                   )}
                 />
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={form.control}
-                  name="start_date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Start Date & Time</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <input
-                            {...field}
-                            type="datetime-local"
-                            onChange={(e) =>
-                              handleDateChange("start_date", e.target.value)
-                            }
-                            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                          />
-                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="end_date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>End Date & Time</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <input
-                            {...field}
-                            type="datetime-local"
-                            onChange={(e) =>
-                              handleDateChange("end_date", e.target.value)
-                            }
-                            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                          />
-                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
-                  control={form.control}
-                  name="registration_start"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Registration Start</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <input
-                            {...field}
-                            type="datetime-local"
-                            min={getMinDateTime("registration_start")}
-                            max={getMaxDateTime("registration_start")}
-                            onChange={(e) =>
-                              handleDateChange(
-                                "registration_start",
-                                e.target.value
-                              )
-                            }
-                            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                          />
-                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="registration_end"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Registration End</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <input
-                            {...field}
-                            type="datetime-local"
-                            min={getMinDateTime("registration_end")}
-                            max={getMaxDateTime("registration_end")}
-                            onChange={(e) =>
-                              handleDateChange(
-                                "registration_end",
-                                e.target.value
-                              )
-                            }
-                            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                          />
-                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={form.control}
-                name="image"
-                render={({ field: { value, onChange, ...field } }) => (
-                  <FormItem>
-                    <FormLabel>Event Image</FormLabel>
-                    <FormControl>
-                      <div className="space-y-4">
-                        <input
-                          {...field}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageChange}
-                          className="hidden"
-                          id="image-upload"
-                        />
-                        <label
-                          htmlFor="image-upload"
-                          className="flex items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer hover:border-teal-500 transition-colors"
-                        >
-                          {imagePreview ? (
-                            <img
-                              src={imagePreview}
-                              alt="Preview"
-                              className="h-full object-contain"
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <FormField
+                    control={form.control}
+                    name="start_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Date & Time</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <input
+                              {...field}
+                              type="datetime-local"
+                              onChange={(e) =>
+                                handleDateChange("start_date", e.target.value)
+                              }
+                              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
                             />
-                          ) : (
-                            <div className="text-center">
-                              <ImageIcon className="w-8 h-8 mx-auto text-gray-400" />
-                              <span className="mt-2 block text-sm text-gray-600">
-                                Click to upload a new image
-                              </span>
-                            </div>
-                          )}
-                        </label>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="end_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>End Date & Time</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <input
+                              {...field}
+                              type="datetime-local"
+                              onChange={(e) =>
+                                handleDateChange("end_date", e.target.value)
+                              }
+                              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
+                            />
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <FormField
+                    control={form.control}
+                    name="registration_start"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Registration Start</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <input
+                              {...field}
+                              type="datetime-local"
+                              min={getMinDateTime("registration_start")}
+                              max={getMaxDateTime("registration_start")}
+                              onChange={(e) =>
+                                handleDateChange(
+                                  "registration_start",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
+                            />
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="registration_end"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Registration End</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <input
+                              {...field}
+                              type="datetime-local"
+                              min={getMinDateTime("registration_end")}
+                              max={getMaxDateTime("registration_end")}
+                              onChange={(e) =>
+                                handleDateChange(
+                                  "registration_end",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
+                            />
+                            <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="image"
+                  render={({ field: { value, onChange, ...field } }) => (
+                    <FormItem>
+                      <FormLabel>Event Image</FormLabel>
+                      <FormControl>
+                        <div className="space-y-4">
+                          <input
+                            {...field}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="hidden"
+                            id="image-upload"
+                          />
+                          <label
+                            htmlFor="image-upload"
+                            className="flex items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer hover:border-teal-500 transition-colors"
+                          >
+                            {imagePreview ? (
+                              <img
+                                src={imagePreview}
+                                alt="Preview"
+                                className="h-full object-contain"
+                              />
+                            ) : (
+                              <div className="text-center">
+                                <ImageIcon className="w-8 h-8 mx-auto text-gray-400" />
+                                <span className="mt-2 block text-sm text-gray-600">
+                                  Click to upload a new image
+                                </span>
+                              </div>
+                            )}
+                          </label>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {error && (
+                  <div className="text-red-500 text-sm mt-2">{error}</div>
                 )}
-              />
 
-              {error && (
-                <div className="text-red-500 text-sm mt-2">{error}</div>
-              )}
-
-              <div className="flex justify-end space-x-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => router.back()}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit">Update Event</Button>
-              </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
-    </div>
+                <div className="flex justify-end space-x-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => router.back()}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit">Update Event</Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+    </MainLayout>
   );
 }

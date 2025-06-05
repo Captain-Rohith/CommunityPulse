@@ -20,7 +20,18 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Eye, Heart, Users, TrendingUp } from "lucide-react";
+import {
+  Eye,
+  Heart,
+  Users,
+  TrendingUp,
+  ArrowLeft,
+  Calendar,
+  Clock,
+} from "lucide-react";
+import { MainLayout } from "@/components/layouts/MainLayout";
+import { LoadingAnimation } from "@/components/LoadingAnimation";
+import { Separator } from "@/components/ui/separator";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -83,137 +94,180 @@ export default function EventDashboard() {
   }, [params.eventId, getToken]);
 
   if (loading) {
-    return <div className="p-8">Loading...</div>;
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+          <div className="container mx-auto px-4 py-8">
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <LoadingAnimation />
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
   }
 
-  if (error) {
-    return <div className="p-8 text-red-500">{error}</div>;
-  }
-
-  if (!dashboardData) {
-    return <div className="p-8">No dashboard data available</div>;
+  if (error || !dashboardData) {
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+          <div className="container mx-auto px-4 py-8">
+            <div className="text-center py-12">
+              <h2 className="text-2xl font-bold text-gray-800 mb-4">
+                Error Loading Dashboard
+              </h2>
+              <p className="text-gray-600">
+                {error || "No dashboard data available"}
+              </p>
+            </div>
+          </div>
+        </div>
+      </MainLayout>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex flex-col gap-2">
-          <Button
-            variant="ghost"
-            className="w-fit"
-            onClick={() => router.back()}
-          >
-            ← Back
-          </Button>
-          <div className="space-y-1">
-            <h1 className="text-3xl font-bold">
-              Hi {user?.firstName || user?.username}, Welcome to{" "}
-              {dashboardData.title} Dashboard
-            </h1>
-            <p className="text-muted-foreground">
-              Track your event's performance and engagement metrics
-            </p>
+    <MainLayout>
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+        <div className="container mx-auto px-4 py-8">
+          <div className="max-w-7xl mx-auto space-y-8">
+            {/* Header */}
+            <div className="flex flex-col gap-6">
+              <Button
+                variant="ghost"
+                className="w-fit text-gray-600 hover:text-purple-600 transition-colors"
+                onClick={() => router.back()}
+              >
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Back
+              </Button>
+              <div className="space-y-2">
+                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600">
+                  {dashboardData.title} Dashboard
+                </h1>
+                <p className="text-gray-600">
+                  Track your event's performance and engagement metrics
+                </p>
+              </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">
+                    Total Views
+                  </CardTitle>
+                  <Eye className="h-4 w-4 text-purple-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {dashboardData.views}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">
+                    Total Likes
+                  </CardTitle>
+                  <Heart className="h-4 w-4 text-purple-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {dashboardData.likes}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">
+                    Total Registrations
+                  </CardTitle>
+                  <Users className="h-4 w-4 text-purple-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {dashboardData.registrations}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-600">
+                    Interested Users
+                  </CardTitle>
+                  <TrendingUp className="h-4 w-4 text-purple-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {dashboardData.interested}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Registration Trend Chart */}
+            <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-gray-800">
+                  Registration Trend
+                </CardTitle>
+                <CardDescription className="text-gray-600">
+                  Track daily registration activity
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={dashboardData.daily_registrations}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                      <XAxis dataKey="date" stroke="#6B7280" />
+                      <YAxis stroke="#6B7280" />
+                      <Tooltip />
+                      <Line
+                        type="monotone"
+                        dataKey="count"
+                        stroke="#9C5789"
+                        strokeWidth={2}
+                        dot={{ fill: "#9C5789" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Event Details */}
+            <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-gray-800">
+                  Event Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Calendar className="w-4 h-4 text-purple-500" />
+                  <span>
+                    Created:{" "}
+                    {new Date(dashboardData.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Clock className="w-4 h-4 text-purple-500" />
+                  <span>
+                    Last Updated:{" "}
+                    {new Date(dashboardData.last_updated).toLocaleDateString()}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Views</CardTitle>
-              <Eye className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{dashboardData.views}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Likes</CardTitle>
-              <Heart className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{dashboardData.likes}</div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Registrations
-              </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {dashboardData.registrations}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Interested Users
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {dashboardData.interested}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Registration Trend Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Registration Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dashboardData.daily_registrations}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="count"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Event Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Event Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Created At
-              </p>
-              <p>{new Date(dashboardData.created_at).toLocaleString()}</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Last Updated
-              </p>
-              <p>{new Date(dashboardData.last_updated).toLocaleString()}</p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
-    </div>
+    </MainLayout>
   );
 }

@@ -6,7 +6,13 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Calendar, Image as ImageIcon, Tag } from "lucide-react";
+import {
+  ArrowLeft,
+  Calendar,
+  Image as ImageIcon,
+  Tag,
+  MapPin,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
@@ -27,13 +33,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { LocationAutocomplete } from "@/components/LocationAutocomplete";
+import { MainLayout } from "@/components/layouts/MainLayout";
+import { cn } from "@/lib/utils";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // Define the form schema using Zod
 const eventSchema = z
   .object({
     title: z.string().min(1, "Title is required"),
     description: z.string().min(1, "Description is required"),
-    location_input: z.string().min(1, "Location is required"),
+    location: z.string().min(1, "Location is required"),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    type: z.string().refine((val) => {
+      if (val.toLowerCase() === "free") return true;
+      const price = parseInt(val);
+      return !isNaN(price) && price >= 50;
+    }, "Type must be 'Free' or a price of at least ₹50"),
     category: z.enum(
       [
         "Garage Sale",
@@ -156,39 +174,12 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-// Add type field to the form data interface
-interface FormData {
-  title: string;
-  description: string;
-  location: string;
-  category: string;
-  type: string; // Add type field
-  startDate: string;
-  endDate: string;
-  registrationStart: string;
-  registrationEnd: string;
-  image?: File;
-}
-
 export default function AddEventPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { getToken, isSignedIn } = useAuth();
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [isResolvingLocation, setIsResolvingLocation] = useState(false);
-  const [formData, setFormData] = useState<FormData>({
-    title: "",
-    description: "",
-    location: "",
-    category: "",
-    type: "Free", // Add default value
-    startDate: "",
-    endDate: "",
-    registrationStart: "",
-    registrationEnd: "",
-  });
 
   // Initialize form
   const form = useForm<EventFormValues>({
@@ -196,7 +187,8 @@ export default function AddEventPage() {
     defaultValues: {
       title: "",
       description: "",
-      location_input: "",
+      location: "",
+      type: "Free",
       category: "Community Class",
       start_date: "",
       end_date: "",
@@ -422,71 +414,100 @@ export default function AddEventPage() {
     return Object.keys(errors).length === 0;
   };
 
-  // Update form submission
   const onSubmit = async (values: EventFormValues) => {
-    if (!isSignedIn) {
-      setError("You must be signed in to create an event");
-      toast.error("Please sign in to continue");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setLocationError(null);
-    setIsResolvingLocation(true);
-
     try {
-      // Resolve location first
-      const resolvedLocation = await resolveLocation(values.location_input);
-
+      setError(null);
+      setLoading(true);
       const token = await getToken();
-      if (!token)
-        throw new Error("Authentication failed. Please sign in again.");
 
+      // Log the form values
+      console.log("Form values:", values);
+
+      // Format dates to ISO string
+      const formatDate = (dateString: string) => {
+        console.log("Formatting date:", dateString);
+
+        // Create a date object in local timezone
+        const localDate = new Date(dateString);
+
+        // Convert to UTC
+        const year = localDate.getUTCFullYear();
+        const month = String(localDate.getUTCMonth() + 1).padStart(2, "0");
+        const day = String(localDate.getUTCDate()).padStart(2, "0");
+        const hours = String(localDate.getUTCHours()).padStart(2, "0");
+        const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
+
+        // Format as ISO string with timezone
+        const isoString = `${year}-${month}-${day}T${hours}:${minutes}:00Z`;
+        console.log("Formatted to UTC:", isoString);
+        return isoString;
+      };
+
+      // Create FormData
       const formData = new FormData();
-      Object.entries(values).forEach(([key, value]) => {
-        if (key === "image" && value instanceof File) {
-          formData.append(key, value);
-        } else if (key === "location_input") {
-          // Send the resolved location instead of the input
-          formData.append("location", resolvedLocation);
-        } else if (value) {
-          formData.append(key, value.toString());
-        }
-      });
+      formData.append("title", values.title);
+      formData.append("description", values.description);
+      formData.append("location", values.location);
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/events`, {
+      // Only append coordinates if they exist
+      if (typeof values.latitude === "number" && !isNaN(values.latitude)) {
+        formData.append("latitude", values.latitude.toString());
+      }
+      if (typeof values.longitude === "number" && !isNaN(values.longitude)) {
+        formData.append("longitude", values.longitude.toString());
+      }
+
+      formData.append("category", values.category);
+      formData.append("type", values.type);
+
+      // Format and append dates
+      const formattedStartDate = formatDate(values.start_date);
+      const formattedEndDate = formatDate(values.end_date);
+      const formattedRegStart = formatDate(values.registration_start);
+      const formattedRegEnd = formatDate(values.registration_end);
+
+      formData.append("start_date", formattedStartDate);
+      formData.append("end_date", formattedEndDate);
+      formData.append("registration_start", formattedRegStart);
+      formData.append("registration_end", formattedRegEnd);
+
+      // Log the final FormData
+      console.log("FormData entries:");
+      for (let [key, value] of formData.entries()) {
+        console.log(`${key}: ${value}`);
+      }
+
+      if (values.image instanceof File) {
+        formData.append("image", values.image);
+      }
+
+      const response = await fetch(`${API_URL}/events`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
+        const errorData = await response.json();
+        console.error("Server error response:", errorData);
         throw new Error(errorData.detail || "Failed to create event");
       }
 
       const data = await response.json();
-      const successmsg = data.is_approved
-        ? "Your event has been created and is now live."
-        : "Your event has been submitted for approval.";
-      toast.success(successmsg);
-
-      form.reset();
-      setImagePreview(null);
-      router.push("/home");
-    } catch (err: any) {
-      console.error("Error creating event:", err);
-      if (err.message.includes("location")) {
-        setLocationError(err.message);
-      } else {
-        setError(err.message || "An error occurred while creating the event");
-      }
-      toast.error(err.message || "Failed to create event. Please try again.");
+      toast.success("Event created successfully");
+      router.push(`/events/${data.id}`);
+    } catch (error) {
+      console.error("Error creating event:", error);
+      setError(
+        error instanceof Error ? error.message : "Failed to create event"
+      );
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create event"
+      );
     } finally {
       setLoading(false);
-      setIsResolvingLocation(false);
     }
   };
 
@@ -509,117 +530,118 @@ export default function AddEventPage() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-3xl"
-        >
-          <div className="flex items-center mb-6">
+      <MainLayout>
+        <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
+          <div className="container mx-auto px-4 py-8">
             <Button
               variant="ghost"
-              onClick={() => router.push("/home")}
-              className="flex items-center text-teal-600 hover:text-teal-800"
+              className="mb-6 text-gray-600 hover:text-purple-600 transition-colors"
+              onClick={() => router.back()}
             >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Back to Events
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back
             </Button>
-          </div>
 
-          <Card className="bg-white border border-gray-200 rounded-xl shadow-xl">
-            <CardHeader className="border-b border-gray-100 pb-6">
-              <h1 className="text-3xl font-bold text-gray-800">
-                Create a New Event
-              </h1>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <Form {...form}>
-                <form
-                  id="event-form"
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="space-y-6"
-                  encType="multipart/form-data"
-                >
-                  <FormField
-                    control={form.control}
-                    name="title"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Event Title</FormLabel>
-                        <FormControl>
-                          <div className="relative">
+            <Card className="max-w-4xl mx-auto border border-gray-100 shadow-sm rounded-xl">
+              <CardHeader className="space-y-1">
+                <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600">
+                  Create New Event
+                </h1>
+                <p className="text-gray-500">
+                  Fill in the details for your community event
+                </p>
+              </CardHeader>
+              <CardContent>
+                <Form {...form}>
+                  <form
+                    onSubmit={form.handleSubmit(onSubmit)}
+                    className="space-y-6"
+                    id="event-form"
+                  >
+                    <FormField
+                      control={form.control}
+                      name="title"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-gray-700">Title</FormLabel>
+                          <FormControl>
                             <input
                               {...field}
-                              type="text"
+                              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                               placeholder="Enter event title"
-                              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
                             />
-                            <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="description"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-gray-700">
+                            Description
+                          </FormLabel>
+                          <FormControl>
+                            <textarea
+                              {...field}
+                              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all min-h-[100px]"
+                              placeholder="Describe your event"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="location"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-gray-700">
+                            Location
+                          </FormLabel>
+                          <div className="relative">
+                            <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <LocationAutocomplete
+                              value={field.value}
+                              onChange={(value, lat, lng) => {
+                                field.onChange(value);
+                                if (lat && lng) {
+                                  form.setValue("latitude", lat);
+                                  form.setValue("longitude", lng);
+                                }
+                              }}
+                              error={form.formState.errors.location?.message}
+                              className="pl-10"
+                            />
                           </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Description</FormLabel>
-                        <FormControl>
-                          <textarea
-                            {...field}
-                            placeholder="Describe your event..."
-                            className="w-full px-4 py-2 border rounded-lg min-h-[120px] focus:ring-2 focus:ring-teal-500 resize-none"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="location_input"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Location</FormLabel>
-                        <FormControl>
-                          <input
-                            {...field}
-                            type="text"
-                            placeholder="Enter address or Plus Code (e.g., 'XYZ123+ABC')"
-                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                          />
-                        </FormControl>
-                        {locationError && (
-                          <p className="text-sm text-red-500 mt-1">
-                            {locationError}
-                          </p>
-                        )}
-                        <p className="text-sm text-gray-500 mt-1">
-                          Enter a street address or Google Maps Plus Code
-                        </p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField
                       control={form.control}
                       name="category"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Category</FormLabel>
-                          <FormControl>
-                            <select
-                              {...field}
-                              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                            >
+                          <FormLabel className="text-gray-700">
+                            Category
+                          </FormLabel>
+                          <Select
+                            onValueChange={field.onChange}
+                            defaultValue={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger className="w-full border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                <SelectValue placeholder="Select a category" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
                               {[
                                 "Garage Sale",
                                 "Sports Match",
@@ -627,57 +649,89 @@ export default function AddEventPage() {
                                 "Volunteer",
                                 "Exhibition",
                                 "Festival",
-                              ].map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
-                                </option>
+                              ].map((cat) => (
+                                <SelectItem
+                                  key={cat}
+                                  value={cat}
+                                  className="flex items-center gap-2"
+                                >
+                                  <span
+                                    className={cn(
+                                      "w-2 h-2 rounded-full",
+                                      cat === "Garage Sale"
+                                        ? "bg-orange-100"
+                                        : cat === "Sports Match"
+                                        ? "bg-blue-100"
+                                        : cat === "Community Class"
+                                        ? "bg-purple-100"
+                                        : cat === "Volunteer"
+                                        ? "bg-green-100"
+                                        : cat === "Exhibition"
+                                        ? "bg-yellow-100"
+                                        : "bg-pink-100"
+                                    )}
+                                  ></span>
+                                  {cat}
+                                </SelectItem>
                               ))}
-                            </select>
-                          </FormControl>
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="type">Event Type</Label>
-                    <Select
+                    <FormField
+                      control={form.control}
                       name="type"
-                      value={formData.type}
-                      onValueChange={(value: string) =>
-                        setFormData({ ...formData, type: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select event type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Free">Free</SelectItem>
-                        <SelectItem value="Paid">Paid</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField
-                      control={form.control}
-                      name="start_date"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Start Date & Time</FormLabel>
+                          <FormLabel className="text-gray-700">
+                            Event Type
+                          </FormLabel>
                           <FormControl>
-                            <div className="relative">
-                              <input
-                                {...field}
-                                type="datetime-local"
-                                min={getMinDateTime("start_date")}
-                                onChange={(e) =>
-                                  handleDateChange("start_date", e.target.value)
+                            <div className="flex gap-2">
+                              <Select
+                                onValueChange={(value) => {
+                                  if (value === "paid") {
+                                    field.onChange("50");
+                                  } else {
+                                    field.onChange("Free");
+                                  }
+                                }}
+                                value={
+                                  field.value.toLowerCase() === "free"
+                                    ? "free"
+                                    : "paid"
                                 }
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                              />
-                              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                              >
+                                <SelectTrigger className="w-[120px] border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                  <SelectValue placeholder="Select type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="free">Free</SelectItem>
+                                  <SelectItem value="paid">Paid</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {field.value.toLowerCase() !== "free" && (
+                                <div className="flex-1">
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                                      ₹
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="50"
+                                      value={field.value}
+                                      onChange={(e) =>
+                                        field.onChange(e.target.value)
+                                      }
+                                      className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                      placeholder="Enter price"
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </FormControl>
                           <FormMessage />
@@ -685,177 +739,201 @@ export default function AddEventPage() {
                       )}
                     />
 
-                    <FormField
-                      control={form.control}
-                      name="end_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>End Date & Time</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <input
-                                {...field}
-                                type="datetime-local"
-                                min={getMinDateTime("end_date")}
-                                onChange={(e) =>
-                                  handleDateChange("end_date", e.target.value)
-                                }
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                              />
-                              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField
-                      control={form.control}
-                      name="registration_start"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registration Start</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <input
-                                {...field}
-                                type="datetime-local"
-                                min={getMinDateTime("registration_start")}
-                                max={getMaxDateTime("registration_start")}
-                                onChange={(e) =>
-                                  handleDateChange(
-                                    "registration_start",
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                              />
-                              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
-                      name="registration_end"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registration End</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <input
-                                {...field}
-                                type="datetime-local"
-                                min={getMinDateTime("registration_end")}
-                                max={getMaxDateTime("registration_end")}
-                                onChange={(e) =>
-                                  handleDateChange(
-                                    "registration_end",
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                              />
-                              <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-
-                  <FormField
-                    control={form.control}
-                    name="image"
-                    render={({ field: { value, onChange, ...fieldProps } }) => (
-                      <FormItem>
-                        <FormLabel>Event Image (Optional)</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handleImageChange}
-                              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500"
-                              {...fieldProps}
-                            />
-                            <ImageIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {imagePreview && (
-                    <div className="mt-2 relative">
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        className="h-48 w-full object-cover rounded-lg border"
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="start_date"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-gray-700">
+                              Start Date & Time
+                            </FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                <input
+                                  {...field}
+                                  type="datetime-local"
+                                  min={getMinDateTime("start_date")}
+                                  onChange={(e) =>
+                                    handleDateChange(
+                                      "start_date",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setImagePreview(null);
-                          form.setValue("image", undefined);
-                        }}
-                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      </button>
+
+                      <FormField
+                        control={form.control}
+                        name="end_date"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-gray-700">
+                              End Date & Time
+                            </FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                <input
+                                  {...field}
+                                  type="datetime-local"
+                                  min={getMinDateTime("end_date")}
+                                  onChange={(e) =>
+                                    handleDateChange("end_date", e.target.value)
+                                  }
+                                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
-                  )}
 
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-blue-800 text-sm">
-                    <p>
-                      <strong>Note:</strong> Events require approval before they
-                      become visible to other users, unless you are a verified
-                      organizer.
-                    </p>
-                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField
+                        control={form.control}
+                        name="registration_start"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-gray-700">
+                              Registration Start
+                            </FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                <input
+                                  {...field}
+                                  type="datetime-local"
+                                  min={getMinDateTime("registration_start")}
+                                  max={getMaxDateTime("registration_start")}
+                                  onChange={(e) =>
+                                    handleDateChange(
+                                      "registration_start",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
 
-                  {error && (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="text-red-500 text-sm text-center"
-                    >
-                      {error}
-                    </motion.p>
-                  )}
+                      <FormField
+                        control={form.control}
+                        name="registration_end"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-gray-700">
+                              Registration End
+                            </FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                <input
+                                  {...field}
+                                  type="datetime-local"
+                                  min={getMinDateTime("registration_end")}
+                                  max={getMaxDateTime("registration_end")}
+                                  onChange={(e) =>
+                                    handleDateChange(
+                                      "registration_end",
+                                      e.target.value
+                                    )
+                                  }
+                                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
-                  <Button
-                    type="submit"
-                    className="w-full bg-teal-600 hover:bg-teal-700 text-white py-3 rounded-lg"
-                    disabled={loading}
-                  >
-                    {loading ? "Creating Event..." : "Create Event"}
-                  </Button>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
+                    <FormField
+                      control={form.control}
+                      name="image"
+                      render={({ field: { value, onChange, ...field } }) => (
+                        <FormItem>
+                          <FormLabel className="text-gray-700">
+                            Event Image
+                          </FormLabel>
+                          <FormControl>
+                            <div className="space-y-4">
+                              <input
+                                {...field}
+                                type="file"
+                                accept="image/*"
+                                onChange={handleImageChange}
+                                className="hidden"
+                                id="image-upload"
+                              />
+                              <label
+                                htmlFor="image-upload"
+                                className="flex items-center justify-center w-full h-32 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-purple-500 transition-colors"
+                              >
+                                {imagePreview ? (
+                                  <img
+                                    src={imagePreview}
+                                    alt="Preview"
+                                    className="h-full object-contain rounded-lg"
+                                  />
+                                ) : (
+                                  <div className="text-center">
+                                    <ImageIcon className="w-8 h-8 mx-auto text-gray-400" />
+                                    <span className="mt-2 block text-sm text-gray-500">
+                                      Click to upload an image
+                                    </span>
+                                  </div>
+                                )}
+                              </label>
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {error && (
+                      <div className="text-red-500 text-sm mt-2">{error}</div>
+                    )}
+
+                    <div className="flex justify-end space-x-4">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => router.back()}
+                        className="border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                      >
+                        {loading ? "Creating..." : "Create Event"}
+                      </Button>
+                    </div>
+                  </form>
+                </Form>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </MainLayout>
     </ErrorBoundary>
   );
 }

@@ -18,6 +18,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MainLayout } from "@/components/layouts/MainLayout";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const ADMIN_EMAIL = "rohithvishwanath1789@gmail.com";
@@ -83,6 +84,7 @@ export default function AdminDashboard() {
           location: event.location,
           description: event.description,
           category: event.category,
+          type: event.type || "Free",
           organizer_id: event.organizer_id,
           image_path: event.image_path,
           created_at: new Date(event.created_at).toLocaleDateString(),
@@ -116,6 +118,7 @@ export default function AdminDashboard() {
             location: event.location,
             description: event.description,
             category: event.category,
+            type: event.type || "Free",
             organizer_id: event.organizer_id,
             image_path: event.image_path,
             created_at: new Date(event.created_at).toLocaleDateString(),
@@ -275,279 +278,221 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto py-8 px-4">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <Button
-              variant="ghost"
-              onClick={() => router.push("/")}
-              className="flex items-center text-blue-600 hover:text-blue-800 transition-colors mb-2"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Back to Events
-            </Button>
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-            <p className="text-gray-600">
-              Manage events, organizers, and users
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="font-medium">Logged in as:</p>
-            <p className="text-blue-600">{ADMIN_EMAIL}</p>
-          </div>
+    <MainLayout>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
         </div>
 
-        <Tabs
-          defaultValue="pending-events"
-          value={activeTab}
-          onValueChange={setActiveTab}
-        >
-          <TabsList className="grid w-full grid-cols-3 mb-8">
-            <TabsTrigger
-              value="pending-events"
-              className="text-sm md:text-base"
-            >
-              Pending Events{" "}
-              {pendingEvents.length > 0 && `(${pendingEvents.length})`}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="pending-events">
+              Pending Events ({pendingEvents.length})
             </TabsTrigger>
-            <TabsTrigger
-              value="approved-events"
-              className="text-sm md:text-base"
-            >
-              Approved Events
+            <TabsTrigger value="approved-events">
+              Approved Events ({approvedEvents.length})
             </TabsTrigger>
-            <TabsTrigger
-              value="pending-organizers"
-              className="text-sm md:text-base"
-            >
-              Pending Organizers{" "}
-              {pendingOrganizers.length > 0 && `(${pendingOrganizers.length})`}
+            <TabsTrigger value="pending-organizers">
+              Pending Organizers ({pendingOrganizers.length})
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="pending-events">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-bold mb-4">
-                Events Pending Approval
-              </h2>
-
-              {loading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="border rounded-lg p-4">
-                      <Skeleton className="h-6 w-3/4 mb-2" />
-                      <Skeleton className="h-4 w-1/2 mb-2" />
-                      <Skeleton className="h-4 w-full mb-2" />
-                      <div className="flex justify-end gap-2 mt-4">
-                        <Skeleton className="h-9 w-20" />
-                        <Skeleton className="h-9 w-20" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : pendingEvents.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg">
-                  <p className="text-gray-500">No pending events to approve</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {pendingEvents.map((event) => (
-                    <Card key={event.id} className="overflow-hidden">
-                      {event.image_path && (
-                        <div className="h-48 overflow-hidden">
-                          <img
-                            src={`${API_URL}/${event.image_path}`}
-                            alt={event.title}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                "https://via.placeholder.com/400x200?text=Event+Image";
-                            }}
-                          />
-                        </div>
-                      )}
-                      <CardHeader>
-                        <div className="flex justify-between items-start">
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <Card key={i} className="w-full">
+                    <CardHeader>
+                      <Skeleton className="h-4 w-3/4" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-20 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : pendingEvents.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No pending events to review
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pendingEvents.map((event) => (
+                  <Card key={event.id} className="w-full">
+                    <CardHeader>
+                      <CardTitle>{event.title}</CardTitle>
+                      <CardDescription>
+                        Created on {event.created_at}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2">
+                          <Calendar className="w-4 h-4 mt-1" />
                           <div>
-                            <CardTitle>{event.title}</CardTitle>
-                            <CardDescription>
-                              <Badge className="mt-1">{event.category}</Badge>
-                            </CardDescription>
-                          </div>
-                          <div className="text-right text-sm text-gray-500">
-                            Submitted: {event.created_at}
+                            <div>{event.date}</div>
+                            <div className="text-sm text-gray-500">
+                              {event.startTime} - {event.endTime}
+                            </div>
                           </div>
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
                         <div className="flex items-start gap-2">
-                          <Calendar className="h-4 w-4 text-gray-500 mt-0.5" />
-                          <span>
-                            {event.date} • {event.startTime} - {event.endTime}
-                          </span>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <MapPin className="h-4 w-4 text-gray-500 mt-0.5" />
+                          <MapPin className="w-4 h-4 mt-1" />
                           <span>{event.location}</span>
                         </div>
-                        <p className="text-gray-700 line-clamp-3">
-                          {event.description}
-                        </p>
-                      </CardContent>
-                      <CardFooter className="flex justify-between">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => rejectEvent(event.id)}
-                          disabled={loading}
-                        >
-                          <X className="h-4 w-4 mr-1" /> Reject
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => approveEvent(event.id)}
-                          disabled={loading}
-                        >
-                          <Check className="h-4 w-4 mr-1" /> Approve
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+                        <div className="flex items-start gap-2">
+                          <Tag className="w-4 h-4 mt-1" />
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="secondary">{event.category}</Badge>
+                            <Badge variant="outline">
+                              {event.type === "Free"
+                                ? "Free"
+                                : `₹${event.type}`}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => rejectEvent(event.id)}
+                        className="bg-red-500 hover:bg-red-600 text-white"
+                      >
+                        <X className="w-4 h-4 mr-1" />
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => approveEvent(event.id)}
+                        className="bg-green-500 hover:bg-green-600 text-white"
+                      >
+                        <Check className="w-4 h-4 mr-1" />
+                        Approve
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="approved-events">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-bold mb-4">Approved Events</h2>
-
-              {loading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="border rounded-lg p-4">
-                      <Skeleton className="h-6 w-3/4 mb-2" />
-                      <Skeleton className="h-4 w-1/2 mb-2" />
-                      <Skeleton className="h-4 w-full mb-2" />
-                    </div>
-                  ))}
-                </div>
-              ) : approvedEvents.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg">
-                  <p className="text-gray-500">No approved events yet</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {approvedEvents.map((event) => (
-                    <Card key={event.id} className="overflow-hidden">
-                      {event.image_path && (
-                        <div className="h-32 overflow-hidden">
-                          <img
-                            src={`${API_URL}/${event.image_path}`}
-                            alt={event.title}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src =
-                                "https://via.placeholder.com/400x200?text=Event+Image";
-                            }}
-                          />
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <Card key={i} className="w-full">
+                    <CardHeader>
+                      <Skeleton className="h-4 w-3/4" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-20 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : approvedEvents.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No approved events
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {approvedEvents.map((event) => (
+                  <Card key={event.id} className="w-full">
+                    <CardHeader>
+                      <CardTitle>{event.title}</CardTitle>
+                      <CardDescription>
+                        Created on {event.created_at}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2">
+                          <Calendar className="w-4 h-4 mt-1" />
+                          <div>
+                            <div>{event.date}</div>
+                            <div className="text-sm text-gray-500">
+                              {event.startTime} - {event.endTime}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                      <CardHeader className="py-3">
-                        <CardTitle className="text-base">
-                          {event.title}
-                        </CardTitle>
-                        <CardDescription>
-                          <Badge variant="outline" className="mt-1">
-                            {event.category}
-                          </Badge>
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="py-2 space-y-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-3 w-3 text-gray-500" />
-                          <span>{event.date}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-3 w-3 text-gray-500" />
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 mt-1" />
                           <span>{event.location}</span>
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+                        <div className="flex items-start gap-2">
+                          <Tag className="w-4 h-4 mt-1" />
+                          <div className="flex flex-wrap gap-2">
+                            <Badge variant="secondary">{event.category}</Badge>
+                            <Badge variant="outline">
+                              {event.type === "Free"
+                                ? "Free"
+                                : `₹${event.type}`}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="pending-organizers">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-bold mb-4">
-                Pending Organizer Verifications
-              </h2>
-
-              {loading ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="border rounded-lg p-4">
-                      <Skeleton className="h-6 w-3/4 mb-2" />
-                      <Skeleton className="h-4 w-1/2 mb-2" />
-                      <div className="flex justify-end gap-2 mt-4">
-                        <Skeleton className="h-9 w-28" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : pendingOrganizers.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg">
-                  <p className="text-gray-500">
-                    No pending organizer verifications
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {pendingOrganizers.map((user) => (
-                    <Card key={user.id}>
-                      <CardHeader>
-                        <div className="flex items-center gap-3">
-                          <div className="bg-blue-100 p-2 rounded-full">
-                            <User className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <CardTitle className="text-lg">
-                              {user.username}
-                            </CardTitle>
-                            <CardDescription>{user.email}</CardDescription>
-                          </div>
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <Card key={i} className="w-full">
+                    <CardHeader>
+                      <Skeleton className="h-4 w-3/4" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-20 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : pendingOrganizers.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                No pending organizer verifications
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {pendingOrganizers.map((user) => (
+                  <Card key={user.id} className="w-full">
+                    <CardHeader>
+                      <CardTitle>{user.name}</CardTitle>
+                      <CardDescription>{user.email}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4" />
+                          <span>
+                            Joined on{" "}
+                            {new Date(user.created_at).toLocaleDateString()}
+                          </span>
                         </div>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-gray-600">
-                          User ID: {user.id}
-                        </p>
-                        <p className="text-sm text-gray-600">
-                          Joined:{" "}
-                          {new Date(user.created_at).toLocaleDateString()}
-                        </p>
-                      </CardContent>
-                      <CardFooter className="flex justify-end">
-                        <Button
-                          onClick={() => verifyOrganizer(user.id)}
-                          disabled={loading}
-                        >
-                          <Check className="h-4 w-4 mr-1" /> Verify as Organizer
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </div>
+                      </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => verifyOrganizer(user.id)}
+                      >
+                        <Check className="w-4 h-4 mr-1" />
+                        Verify as Organizer
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+    </MainLayout>
   );
 }

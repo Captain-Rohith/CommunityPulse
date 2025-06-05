@@ -1,3 +1,5 @@
+"use client";
+
 import * as React from "react";
 import { Calendar, MapPin, Clock, Users, Tag, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -27,6 +29,7 @@ interface Event {
   distance?: number;
   type: string;
   views?: number;
+  status?: string;
 }
 
 interface EventCardProps {
@@ -37,6 +40,7 @@ interface EventCardProps {
   showEditButton?: boolean;
   showApprovalStatus?: boolean;
   showDistance?: boolean;
+  variant?: "default" | "compact";
 }
 
 function EventCard({
@@ -47,6 +51,7 @@ function EventCard({
   showEditButton = false,
   showApprovalStatus = false,
   showDistance = false,
+  variant = "default",
   ...props
 }: EventCardProps) {
   // Handle event date formatting
@@ -69,7 +74,19 @@ function EventCard({
     }
   };
 
-  const buttonText = event.userInterested ? "Not Interested" : "I'm Interested";
+  const buttonText =
+    event.status === "interested"
+      ? "Complete Registration"
+      : event.userInterested
+      ? "Not Interested"
+      : "I'm Interested";
+
+  const buttonStyle =
+    event.status === "interested"
+      ? "bg-purple-600 text-white hover:bg-purple-700"
+      : event.userInterested
+      ? "bg-gray-200 text-gray-800 hover:bg-gray-300"
+      : "bg-primary text-primary-foreground hover:bg-primary/90";
 
   // Handle event time formatting
   interface FormatTimeOptions extends Intl.DateTimeFormatOptions {}
@@ -85,6 +102,77 @@ function EventCard({
     );
   };
 
+  // Early return for compact variant
+  if (variant === "compact") {
+    return (
+      <Link href={`/events/${event.id}`} className="block">
+        <div
+          className={cn(
+            "bg-card text-card-foreground flex rounded-lg border shadow-sm hover:shadow-md transition-shadow duration-200",
+            className
+          )}
+          {...props}
+        >
+          {/* Compact image */}
+          <div className="relative w-20 h-20 rounded-l-lg overflow-hidden flex-shrink-0">
+            {event.image_path ? (
+              <img
+                src={`${API_URL}/${event.image_path}`}
+                alt={event.title}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                  const parent = e.currentTarget.parentElement;
+                  if (parent) {
+                    const gradientDiv = document.createElement("div");
+                    gradientDiv.className =
+                      "absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 opacity-80";
+                    parent.appendChild(gradientDiv);
+                  }
+                }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 opacity-80"></div>
+            )}
+          </div>
+
+          {/* Compact content */}
+          <div className="flex-1 p-2 min-w-0">
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <h3 className="font-medium text-sm line-clamp-1">
+                  {event.title}
+                </h3>
+                <div className="flex items-center text-muted-foreground text-xs gap-1 mt-0.5">
+                  <Calendar className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{formatDate(event.date)}</span>
+                </div>
+                <div className="flex items-center text-muted-foreground text-xs gap-1 mt-0.5">
+                  <Clock className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">
+                    {formatTime(event.startTime)}
+                  </span>
+                </div>
+              </div>
+              <span
+                className={cn(
+                  "text-xs px-1.5 py-0.5 rounded-sm whitespace-nowrap",
+                  event.type === "Free"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-blue-100 text-blue-800"
+                )}
+              >
+                {event.type !== "Free" && "₹"}
+                {event.type}
+              </span>
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
+  }
+
+  // Original card render
   return (
     <Link href={`/events/${event.id}`} className="block">
       <div
@@ -132,22 +220,38 @@ function EventCard({
               </div>
             )}
             <div className="bg-white/90 text-xs font-medium px-2 py-1 rounded-full">
-              {event.category} • {event.type !== "Free" && "₹"}
-              {event.type}
+              {event.category}
             </div>
           </div>
         </div>
 
         <div className="p-4 space-y-4 flex-1 flex flex-col">
-          {/* Title and date */}
+          {/* Title and type/distance pills */}
           <div className="space-y-2">
-            <div className="flex justify-between items-start">
-              <h3 className="text-lg font-semibold line-clamp-2">
+            <div className="flex justify-between items-start gap-3">
+              <h3 className="text-lg font-semibold line-clamp-2 flex-1">
                 {event.title}
               </h3>
-              <div className="flex items-center gap-2">
+              {showDistance && event.distance !== undefined ? (
+                <div className="flex flex-col">
+                  <div
+                    className={cn(
+                      "text-xs font-medium px-3 py-1.5 rounded-t-sm text-center min-w-[90px]",
+                      event.type === "Free"
+                        ? "bg-green-100 text-green-800"
+                        : "bg-blue-100 text-blue-800"
+                    )}
+                  >
+                    {event.type !== "Free" && "₹"}
+                    {event.type}
+                  </div>
+                  <div className="text-xs font-medium px-3 py-1.5 rounded-b-sm bg-gray-100 text-gray-800 text-center border-t border-white/20">
+                    {event.distance.toFixed(1)} km away
+                  </div>
+                </div>
+              ) : (
                 <span
-                  className={`text-sm px-2 py-1 rounded-full ${
+                  className={`text-sm px-2 py-1 rounded-sm ${
                     event.type === "Free"
                       ? "bg-green-100 text-green-800"
                       : "bg-blue-100 text-blue-800"
@@ -156,7 +260,7 @@ function EventCard({
                   {event.type !== "Free" && "₹"}
                   {event.type}
                 </span>
-              </div>
+              )}
             </div>
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <Calendar className="h-4 w-4" />
@@ -170,14 +274,7 @@ function EventCard({
           <div className="space-y-2">
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <MapPin className="h-4 w-4" />
-              <span className="line-clamp-1">
-                {event.location}
-                {showDistance && event.distance !== undefined && (
-                  <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                    {event.distance.toFixed(1)} km away
-                  </span>
-                )}
-              </span>
+              <span className="line-clamp-1">{event.location}</span>
             </div>
             <div className="flex items-center text-muted-foreground text-sm gap-1.5">
               <Clock className="h-4 w-4" />
@@ -214,11 +311,7 @@ function EventCard({
               )}
               {showInterestButton && (
                 <button
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                    event.userInterested
-                      ? "bg-gray-200 text-gray-800 hover:bg-gray-300"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90"
-                  }`}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${buttonStyle}`}
                   onClick={handleInterestClick}
                 >
                   {buttonText}
@@ -240,6 +333,7 @@ function EventCardsGrid({
   showEditButton = false,
   showApprovalStatus = false,
   showDistance = false,
+  variant = "default",
 }: {
   events: Event[];
   onInterest?: (eventId: number) => void;
@@ -247,9 +341,17 @@ function EventCardsGrid({
   showEditButton?: boolean;
   showApprovalStatus?: boolean;
   showDistance?: boolean;
+  variant?: "default" | "compact";
 }) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div
+      className={cn(
+        "grid gap-4",
+        variant === "compact"
+          ? "grid-cols-1"
+          : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+      )}
+    >
       {events.map((event) => (
         <EventCard
           key={event.id}
@@ -259,6 +361,7 @@ function EventCardsGrid({
           showEditButton={showEditButton}
           showApprovalStatus={showApprovalStatus}
           showDistance={showDistance}
+          variant={variant}
         />
       ))}
     </div>
