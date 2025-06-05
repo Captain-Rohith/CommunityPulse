@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Query, Request, Header, Body
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Query, Request, Header, Body, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
@@ -85,7 +85,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Clerk authentication
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 # Database Models
 class User(Base):
@@ -106,6 +106,8 @@ class User(Base):
     event_registrations = relationship("EventRegistration", back_populates="user")
     event_likes = relationship("EventLike", back_populates="user")
     event_reports = relationship("EventReport", back_populates="user")
+    reported_issues = relationship("Issue", back_populates="reporter")
+    issue_votes = relationship("IssueVote", back_populates="user")
 
 class Event(Base):
     __tablename__ = "events"
@@ -197,6 +199,40 @@ class EventView(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     viewed_at = Column(DateTime, default=datetime.utcnow)
     
+class Issue(Base):
+    __tablename__ = "issues"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(Text)
+    location = Column(Text)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    category = Column(String, index=True)  # e.g., "Road", "Sanitation", "Public Safety"
+    status = Column(String, default="pending")  # pending, approved, resolved, rejected
+    image_path = Column(String, nullable=True)
+    reporter_id = Column(Integer, ForeignKey("users.id"))
+    is_approved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    votes_count = Column(Integer, default=0)
+    
+    # Relationships
+    reporter = relationship("User", back_populates="reported_issues")
+    votes = relationship("IssueVote", back_populates="issue", cascade="all, delete-orphan")
+
+class IssueVote(Base):
+    __tablename__ = "issue_votes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    issue_id = Column(Integer, ForeignKey("issues.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    issue = relationship("Issue", back_populates="votes")
+    user = relationship("User", back_populates="issue_votes")
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -487,6 +523,37 @@ async def get_admin_user(current_user: User = Depends(get_current_user)):
             detail="Not enough permissions"
         )
     return current_user
+
+async def get_current_user_or_none(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+):
+    if not credentials:
+        return None
+        
+    token = credentials.credentials
+    
+    try:
+        # Verify the token with Clerk, with leeway for iat validation
+        payload = jwt.decode(
+            token, 
+            key=CLERK_PEM_PUBLIC_KEY, 
+            algorithms=['RS256'],
+            options={"verify_iat": False}
+        )
+        clerk_user_id = payload.get("sub")
+        if not clerk_user_id:
+            return None
+        
+        # Get user from database
+        user = db.query(User).filter(User.clerk_id == clerk_user_id).first()
+        if not user or user.is_banned:
+            return None
+            
+        return user
+        
+    except:
+        return None
 
 # User endpoints
 @app.get("/users/me", response_model=UserResponse)
@@ -1390,7 +1457,7 @@ async def get_user_signedup_events(
 @app.get("/events/{event_id}/details", response_model=EventResponse)
 async def get_event_details(
     event_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_or_none),
     db: Session = Depends(get_db)
 ):
     event = db.query(Event).filter(Event.id == event_id).first()
@@ -1401,38 +1468,44 @@ async def get_event_details(
     if not inspect(engine).has_table("event_views"):
         Base.metadata.create_all(bind=engine)
     
-    # Check if user has already viewed this event in the last 24 hours
-    last_24h = datetime.utcnow() - timedelta(hours=24)
-    existing_view = db.query(EventView).filter(
-        EventView.event_id == event_id,
-        EventView.user_id == current_user.id,
-        EventView.viewed_at >= last_24h
-    ).first()
-    
-    if not existing_view:
-        # Create new view record
-        new_view = EventView(
-            event_id=event_id,
-            user_id=current_user.id,
-            viewed_at=datetime.utcnow()
-        )
-        db.add(new_view)
+    # Only track views and update counts for authenticated users
+    if current_user:
+        # Check if user has already viewed this event in the last 24 hours
+        last_24h = datetime.utcnow() - timedelta(hours=24)
+        existing_view = db.query(EventView).filter(
+            EventView.event_id == event_id,
+            EventView.user_id == current_user.id,
+            EventView.viewed_at >= last_24h
+        ).first()
         
-        # Increment view count
-        event.views += 1
-        db.commit()
+        if not existing_view:
+            # Create new view record
+            new_view = EventView(
+                event_id=event_id,
+                user_id=current_user.id,
+                viewed_at=datetime.utcnow()
+            )
+            db.add(new_view)
+            
+            # Increment view count
+            event.views += 1
+            db.commit()
     
-    # Get registration status
-    registration = db.query(EventRegistration).filter(
-        EventRegistration.event_id == event_id,
-        EventRegistration.user_id == current_user.id
-    ).first()
-    
-    # Get like status
-    like = db.query(EventLike).filter(
-        EventLike.event_id == event_id,
-        EventLike.user_id == current_user.id
-    ).first()
+    # Get registration and like status only for authenticated users
+    is_registered = False
+    is_liked = False
+    if current_user:
+        registration = db.query(EventRegistration).filter(
+            EventRegistration.event_id == event_id,
+            EventRegistration.user_id == current_user.id
+        ).first()
+        is_registered = registration is not None
+
+        like = db.query(EventLike).filter(
+            EventLike.event_id == event_id,
+            EventLike.user_id == current_user.id
+        ).first()
+        is_liked = like is not None
     
     # Count total likes
     likes_count = db.query(EventLike).filter(
@@ -1460,8 +1533,8 @@ async def get_event_details(
         "created_at": event.created_at,
         "updated_at": event.updated_at,
         "attendees_count": event.attendees_count,
-        "is_registered": registration is not None,
-        "is_liked": like is not None,
+        "is_registered": is_registered,
+        "is_liked": is_liked,
         "likes_count": likes_count,
         "organizer": event.organizer
     }
@@ -1726,6 +1799,248 @@ def get_coordinates_from_location(location: str) -> Tuple[Optional[float], Optio
     except Exception as e:
         logger.error(f"Error geocoding location {location}: {str(e)}")
         return None, None
+
+# Pydantic Models
+class IssueCreate(BaseModel):
+    title: str
+    description: str
+    location: str
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+    category: str
+
+class IssueUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    location: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+    category: Optional[str] = None
+    status: Optional[str] = None
+
+class IssueResponse(BaseModel):
+    id: int
+    title: str
+    description: str
+    location: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    category: str
+    status: str
+    image_path: Optional[str] = None
+    reporter_id: int
+    is_approved: bool
+    created_at: datetime
+    updated_at: datetime
+    votes_count: int
+    has_voted: Optional[bool] = None
+    reporter: UserResponse
+    
+    class Config:
+        from_attributes = True
+
+# Issue endpoints
+@app.post("/issues", response_model=IssueResponse)
+async def create_issue(
+    title: str = Form(...),
+    description: str = Form(...),
+    location: str = Form(...),
+    latitude: Optional[float] = Form(default=None),
+    longitude: Optional[float] = Form(default=None),
+    category: str = Form(...),
+    image: UploadFile = File(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Get coordinates from location if not provided
+    if latitude is None or longitude is None:
+        lat, lng = get_coordinates_from_location(location)
+        if lat and lng:
+            latitude = lat
+            longitude = lng
+    
+    # Create issue
+    db_issue = Issue(
+        title=title,
+        description=description,
+        location=location,
+        latitude=latitude,
+        longitude=longitude,
+        category=category,
+        reporter_id=current_user.id,
+        is_approved=current_user.is_verified_organizer,
+        votes_count=0
+    )
+    
+    # Handle image upload if provided
+    if image:
+        file_extension = image.filename.split(".")[-1]
+        filename = f"{uuid.uuid4()}.{file_extension}"
+        file_location = f"uploads/{filename}"
+        
+        with open(file_location, "wb") as file_object:
+            shutil.copyfileobj(image.file, file_object)
+        
+        db_issue.image_path = file_location
+    
+    db.add(db_issue)
+    db.commit()
+    db.refresh(db_issue)
+    
+    return db_issue
+
+@app.get("/issues", response_model=List[IssueResponse])
+def get_issues(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    approved_only: bool = True,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_or_none)
+):
+    query = db.query(Issue)
+    
+    if approved_only:
+        query = query.filter(Issue.is_approved == True)
+    
+    if category:
+        query = query.filter(Issue.category == category)
+    
+    if status:
+        query = query.filter(Issue.status == status)
+    
+    issues = query.order_by(Issue.created_at.desc()).all()
+    
+    # Add vote status for authenticated users
+    if current_user:
+        for issue in issues:
+            vote = db.query(IssueVote).filter(
+                IssueVote.issue_id == issue.id,
+                IssueVote.user_id == current_user.id
+            ).first()
+            issue.has_voted = vote is not None
+    
+    return issues
+
+@app.get("/issues/{issue_id}", response_model=IssueResponse)
+def get_issue(
+    issue_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_or_none)
+):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    
+    if current_user:
+        vote = db.query(IssueVote).filter(
+            IssueVote.issue_id == issue_id,
+            IssueVote.user_id == current_user.id
+        ).first()
+        issue.has_voted = vote is not None
+    
+    return issue
+
+@app.post("/issues/{issue_id}/vote")
+async def vote_issue(
+    issue_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    
+    existing_vote = db.query(IssueVote).filter(
+        IssueVote.issue_id == issue_id,
+        IssueVote.user_id == current_user.id
+    ).first()
+    
+    if existing_vote:
+        raise HTTPException(status_code=400, detail="Already voted for this issue")
+    
+    vote = IssueVote(issue_id=issue_id, user_id=current_user.id)
+    db.add(vote)
+    issue.votes_count += 1
+    db.commit()
+    
+    return {"message": "Vote recorded successfully"}
+
+@app.delete("/issues/{issue_id}/vote")
+async def remove_vote(
+    issue_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    vote = db.query(IssueVote).filter(
+        IssueVote.issue_id == issue_id,
+        IssueVote.user_id == current_user.id
+    ).first()
+    
+    if not vote:
+        raise HTTPException(status_code=404, detail="Vote not found")
+    
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    issue.votes_count = max(0, issue.votes_count - 1)
+    
+    db.delete(vote)
+    db.commit()
+    
+    return {"message": "Vote removed successfully"}
+
+@app.put("/admin/issues/{issue_id}/approve")
+async def approve_issue(
+    issue_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    
+    issue.is_approved = True
+    db.commit()
+    
+    return {"message": "Issue approved successfully"}
+
+@app.put("/admin/issues/{issue_id}/resolve")
+async def resolve_issue(
+    issue_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    
+    issue.status = "resolved"
+    db.commit()
+    
+    return {"message": "Issue marked as resolved"}
+
+@app.get("/admin/issues/pending", response_model=List[IssueResponse])
+async def get_pending_issues(
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    issues = db.query(Issue).filter(Issue.is_approved == False).all()
+    logger.info(f"Found {len(issues)} pending issues for admin {admin_user.email}")
+    return issues
+
+@app.delete("/admin/issues/{issue_id}/reject")
+async def reject_issue(
+    issue_id: int,
+    admin_user: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    
+    db.delete(issue)
+    db.commit()
+    
+    logger.info(f"Admin {admin_user.email} rejected issue {issue_id}")
+    return {"message": "Issue rejected and deleted successfully"}
 
 if __name__ == "__main__":
     import uvicorn

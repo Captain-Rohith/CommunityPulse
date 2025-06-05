@@ -66,6 +66,7 @@ import { EmptyRegisteredEvents } from "@/components/EmptyRegisteredEvents";
 import { toast } from "react-hot-toast";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { ContentToggle } from "@/components/ContentToggle";
 
 // API base URL
 const API_URL = "http://localhost:8000";
@@ -221,6 +222,8 @@ export default function EventsPage() {
           const formattedRegistered = registeredData.map((event: any) => ({
             id: event.id,
             title: event.title,
+            start_date: event.start_date,
+            end_date: event.end_date,
             date: new Date(event.start_date).toISOString().split("T")[0],
             enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
@@ -238,6 +241,8 @@ export default function EventsPage() {
           const formattedInterested = interestedData.map((event: any) => ({
             id: event.id,
             title: event.title,
+            start_date: event.start_date,
+            end_date: event.end_date,
             date: new Date(event.start_date).toISOString().split("T")[0],
             enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
@@ -289,6 +294,8 @@ export default function EventsPage() {
           return {
             id: event.id,
             title: event.title,
+            start_date: event.start_date,
+            end_date: event.end_date,
             date: new Date(event.start_date).toISOString().split("T")[0],
             enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
@@ -331,12 +338,12 @@ export default function EventsPage() {
     return [...events].sort((a, b) => {
       switch (filters.sortBy) {
         case "date-asc":
-          const dateA = new Date(a.date || a.start_date).getTime();
-          const dateB = new Date(b.date || b.start_date).getTime();
+          const dateA = new Date(a.start_date || a.date).getTime();
+          const dateB = new Date(b.start_date || b.date).getTime();
           return dateA - dateB;
         case "date-desc":
-          const dateDescA = new Date(a.date || a.start_date).getTime();
-          const dateDescB = new Date(b.date || b.start_date).getTime();
+          const dateDescA = new Date(a.start_date || a.date).getTime();
+          const dateDescB = new Date(b.start_date || b.date).getTime();
           return dateDescB - dateDescA;
         case "title-asc":
           return (a.title || "").localeCompare(b.title || "");
@@ -555,6 +562,8 @@ export default function EventsPage() {
         const formattedEvents = response.data.map((event: any) => ({
           id: event.id,
           title: event.title,
+          start_date: event.start_date,
+          end_date: event.end_date,
           date: new Date(event.start_date).toISOString().split("T")[0],
           enddate: new Date(event.end_date).toISOString().split("T")[0],
           location: event.location,
@@ -615,6 +624,8 @@ export default function EventsPage() {
           return {
             id: event.id,
             title: event.title,
+            start_date: event.start_date,
+            end_date: event.end_date,
             date: new Date(event.start_date).toISOString().split("T")[0],
             enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
@@ -756,6 +767,8 @@ export default function EventsPage() {
           const formattedRegistered = registeredData.map((event: any) => ({
             id: event.id,
             title: event.title,
+            start_date: event.start_date,
+            end_date: event.end_date,
             date: new Date(event.start_date).toISOString().split("T")[0],
             enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
@@ -774,6 +787,8 @@ export default function EventsPage() {
           const formattedInterested = interestedData.map((event: any) => ({
             id: event.id,
             title: event.title,
+            start_date: event.start_date,
+            end_date: event.end_date,
             date: new Date(event.start_date).toISOString().split("T")[0],
             enddate: new Date(event.end_date).toISOString().split("T")[0],
             location: event.location,
@@ -799,6 +814,8 @@ export default function EventsPage() {
             return {
               id: event.id,
               title: event.title,
+              start_date: event.start_date,
+              end_date: event.end_date,
               date: new Date(event.start_date).toISOString().split("T")[0],
               enddate: new Date(event.end_date).toISOString().split("T")[0],
               location: event.location,
@@ -908,6 +925,7 @@ export default function EventsPage() {
     <MainLayout>
       <div className="min-h-screen flex flex-col bg-gradient-to-b from-gray-50 to-white">
         <main className="flex-grow container mx-auto px-4">
+          <ContentToggle activeContent="events" />
           {/* Hero Section */}
           <div className="relative my-8 mx-4 z-0">
             <motion.div

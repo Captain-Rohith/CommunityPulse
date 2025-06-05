@@ -134,10 +134,13 @@ export default function EventDetailsPage() {
     const fetchEventDetails = async () => {
       try {
         const token = await getToken();
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
         const response = await fetch(`${API_URL}/events/${params.id}/details`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers,
         });
 
         if (!response.ok) {
@@ -156,41 +159,44 @@ export default function EventDetailsPage() {
         setIsLiked(data.is_liked);
         setLikesCount(data.likes_count);
 
-        // Fetch user details to check if they're an admin
-        const userResponse = await fetch(`${API_URL}/users/me`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          setIsAdmin(userData.is_admin);
-          setIsOrganizer(data.organizer_id === userData.id);
-        }
-
-        // Fetch registration status
-        const statusResponse = await fetch(
-          `${API_URL}/events/${params.id}/registration-status`,
-          {
+        // Only fetch user details and registration status if signed in
+        if (isSignedIn) {
+          // Fetch user details to check if they're an admin
+          const userResponse = await fetch(`${API_URL}/users/me`, {
             headers: {
               Authorization: `Bearer ${token}`,
             },
-          }
-        );
+          });
 
-        if (statusResponse.ok) {
-          const statusData = await statusResponse.json();
-          setRegistrationStatus(statusData);
-          if (statusData.registration) {
-            setAttendees(
-              statusData.registration.attendees.map((name: string) => ({
-                name,
-                age: "",
-                phone: "",
-              }))
-            );
-            setNumberOfAttendees(statusData.registration.number_of_attendees);
+          if (userResponse.ok) {
+            const userData = await userResponse.json();
+            setIsAdmin(userData.is_admin);
+            setIsOrganizer(data.organizer_id === userData.id);
+          }
+
+          // Fetch registration status
+          const statusResponse = await fetch(
+            `${API_URL}/events/${params.id}/registration-status`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            setRegistrationStatus(statusData);
+            if (statusData.registration) {
+              setAttendees(
+                statusData.registration.attendees.map((name: string) => ({
+                  name,
+                  age: "",
+                  phone: "",
+                }))
+              );
+              setNumberOfAttendees(statusData.registration.number_of_attendees);
+            }
           }
         }
       } catch (error) {
@@ -202,7 +208,7 @@ export default function EventDetailsPage() {
       }
     };
 
-    if (params.id && isSignedIn) {
+    if (params.id) {
       fetchEventDetails();
     }
   }, [params.id, getToken, isSignedIn]);
@@ -317,13 +323,15 @@ export default function EventDetailsPage() {
         (attendee) =>
           attendee.name.trim() &&
           /^\d+$/.test(attendee.age) &&
-          parseInt(attendee.age) > 0 &&
-          parseInt(attendee.age) < 150 &&
-          /^[\d\s\-\+\(\)]+$/.test(attendee.phone.trim())
+          parseInt(attendee.age) >= 2 &&
+          parseInt(attendee.age) <= 120 &&
+          /^\d{10}$/.test(attendee.phone.replace(/[\s\-\(\)]/g, ""))
       );
 
       if (!isValid) {
-        toast.error("Please fill in valid details for all attendees");
+        toast.error(
+          "Please ensure all attendees have valid details: Name, Age (2-120), and 10-digit phone number"
+        );
         return;
       }
 
@@ -662,7 +670,7 @@ export default function EventDetailsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`age-${index}`}>Age</Label>
+              <Label htmlFor={`age-${index}`}>Age (2-120)</Label>
               <Input
                 id={`age-${index}`}
                 type="number"
@@ -671,21 +679,23 @@ export default function EventDetailsPage() {
                   handleAttendeesChange(index, "age", e.target.value)
                 }
                 placeholder="Enter age"
-                min="1"
-                max="150"
+                min="2"
+                max="120"
                 required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`phone-${index}`}>Phone Number</Label>
+              <Label htmlFor={`phone-${index}`}>Phone Number (10 digits)</Label>
               <Input
                 id={`phone-${index}`}
                 value={attendee.phone}
-                onChange={(e) =>
-                  handleAttendeesChange(index, "phone", e.target.value)
-                }
-                placeholder="Enter phone number"
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 10);
+                  handleAttendeesChange(index, "phone", value);
+                }}
+                placeholder="Enter 10-digit phone number"
                 required
+                pattern="[0-9]{10}"
               />
             </div>
           </div>
