@@ -458,7 +458,10 @@ export default function EventsPage() {
   }
 
   const handleCategorySelect: CategorySelectHandler = (selectedCategory) => {
-    setCategory(selectedCategory);
+    setFilters((prev) => ({
+      ...prev,
+      categories: [selectedCategory], // Replace existing categories with the selected one
+    }));
   };
 
   interface MarkInterestHandler {
@@ -911,6 +914,14 @@ export default function EventsPage() {
     </div>
   );
 
+  // Clear category filter
+  const clearCategory = () => {
+    setFilters((prev) => ({
+      ...prev,
+      categories: [],
+    }));
+  };
+
   if (pageLoading) {
     return (
       <MainLayout>
@@ -1314,7 +1325,7 @@ export default function EventsPage() {
                       onClick={() => handleCategorySelect(cat)}
                       className={cn(
                         "w-full text-left px-3 py-2 rounded-lg transition-colors duration-200 flex items-center gap-2",
-                        category === cat
+                        filters.categories.includes(cat)
                           ? "bg-purple-50 text-purple-700"
                           : "hover:bg-gray-50 text-gray-700"
                       )}
@@ -1336,14 +1347,14 @@ export default function EventsPage() {
                         )}
                       ></span>
                       <span>{cat}</span>
-                      {category === cat && (
+                      {filters.categories.includes(cat) && (
                         <Check className="h-4 w-4 ml-auto text-purple-600" />
                       )}
                     </button>
                   ))}
-                  {category && (
+                  {filters.categories.length > 0 && (
                     <button
-                      onClick={() => setCategory(null)}
+                      onClick={clearCategory}
                       className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-50 text-gray-700 transition-colors duration-200 flex items-center gap-2 text-sm"
                     >
                       <X className="h-4 w-4" />
