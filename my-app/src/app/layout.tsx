@@ -30,7 +30,10 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className={`${inter.variable} antialiased`}>
+        <body
+          suppressHydrationWarning
+          className={`${inter.variable} antialiased`}
+        >
           <header>
             {/* <SignedOut>
               <SignInButton />

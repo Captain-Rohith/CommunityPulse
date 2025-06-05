@@ -63,6 +63,9 @@ import {
 import { Search } from "lucide-react";
 import { LoadingAnimation } from "@/components/LoadingAnimation";
 import { EmptyRegisteredEvents } from "@/components/EmptyRegisteredEvents";
+import { toast } from "react-hot-toast";
+import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 
 // API base URL
 const API_URL = "http://localhost:8000";
@@ -83,6 +86,37 @@ interface FilterState {
   dateRange: DateRange | undefined;
   sortBy: SortOption;
 }
+
+// Update the heroContent array first
+const heroContent = [
+  {
+    title: "Discover Local Events",
+    subtitle:
+      "Connect with your community through exciting events, from garage sales to festivals.",
+    gradient: "from-indigo-500 to-blue-500",
+    bgGradient: "from-indigo-50/60 to-blue-50/60",
+  },
+  {
+    title: "Create Memorable Experiences",
+    subtitle: "Host and join community gatherings that bring people together.",
+    gradient: "from-blue-500 to-cyan-500",
+    bgGradient: "from-blue-50/60 to-cyan-50/60",
+  },
+  {
+    title: "Build Strong Communities",
+    subtitle:
+      "Foster connections and create lasting relationships through local events.",
+    gradient: "from-cyan-500 to-teal-500",
+    bgGradient: "from-cyan-50/60 to-teal-50/60",
+  },
+  {
+    title: "Share Your Passions",
+    subtitle:
+      "Organize events that showcase your interests and meet like-minded people.",
+    gradient: "from-teal-500 to-emerald-500",
+    bgGradient: "from-teal-50/60 to-emerald-50/60",
+  },
+];
 
 export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -113,6 +147,19 @@ export default function EventsPage() {
   const [pageLoading, setPageLoading] = useState(true);
 
   const [isScrolled, setIsScrolled] = useState(false);
+
+  const router = useRouter();
+
+  const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
+
+  // Add this useEffect for text rotation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentHeroIndex((prev) => (prev + 1) % heroContent.length);
+    }, 5000); // Change every 5 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Check if user is admin
   useEffect(() => {
@@ -237,6 +284,7 @@ export default function EventsPage() {
         const formattedAllEvents = response.data.map((event: any) => {
           // Check if this event is in the interestedEvents list
           const isInterested = interestedEvents.some((e) => e.id === event.id);
+          const isRegistered = registeredEvents.some((e) => e.id === event.id);
 
           return {
             id: event.id,
@@ -255,19 +303,16 @@ export default function EventsPage() {
             is_approved: event.is_approved,
             organizer_id: event.organizer_id,
             organizer: event.organizer,
-            status: isInterested ? "interested" : undefined,
+            status: isRegistered
+              ? "registered"
+              : isInterested
+              ? "interested"
+              : undefined,
           };
         });
 
-        // Filter out events that user is already registered for or interested in
-        const filteredEvents = formattedAllEvents.filter(
-          (event: any) =>
-            !registeredEvents.some((e) => e.id === event.id) &&
-            !interestedEvents.some((e) => e.id === event.id)
-        );
-
-        setAllEvents(filteredEvents);
-        setFilteredEvents(filteredEvents);
+        setAllEvents(formattedAllEvents);
+        setFilteredEvents(formattedAllEvents);
         setError(null);
       } catch (err) {
         console.error("Error fetching events:", err);
@@ -429,48 +474,66 @@ export default function EventsPage() {
     userInterested?: boolean;
   }
 
-  const markInterest: MarkInterestHandler = async (eventId) => {
-    if (!isSignedIn) {
-      alert("Please sign in to mark interest in this event");
-      return;
-    }
-
+  const handleInterest: MarkInterestHandler = async (eventId) => {
     try {
-      const token = await getToken();
+      if (!isSignedIn) {
+        toast.error("Please sign in to register for this event");
+        return;
+      }
 
+      const token = await getToken();
       const response = await fetch(`${API_URL}/events/${eventId}/interest`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       });
 
       if (!response.ok) {
-        throw new Error("Failed to mark interest");
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Failed to mark interest");
       }
 
-      // Find the event in filteredEvents
-      const eventToMove = filteredEvents.find((event) => event.id === eventId);
+      const data = await response.json();
 
-      if (eventToMove) {
-        // Format the event for interested events list
-        const formattedEvent = {
-          ...eventToMove,
-          status: "interested", // Add status field
-        };
-
-        // Remove from filtered events
-        setFilteredEvents(
-          filteredEvents.filter((event) => event.id !== eventId)
+      // Update the event status in all relevant state arrays
+      const updateEventStatus = (events: any[]) =>
+        events.map((event) =>
+          event.id === eventId
+            ? {
+                ...event,
+                status: "interested",
+              }
+            : event
         );
 
-        // Add to interested events
-        setInterestedEvents([...interestedEvents, formattedEvent]);
+      setAllEvents((prev) => updateEventStatus(prev));
+      setFilteredEvents((prev) => updateEventStatus(prev));
+      setNearbyEvents((prev) => updateEventStatus(prev));
+
+      // Add to interested events list
+      const eventToAdd = allEvents.find((e) => e.id === eventId);
+      if (eventToAdd) {
+        const updatedEvent = { ...eventToAdd, status: "interested" };
+        setInterestedEvents((prev) => {
+          // Check if the event is already in the interested list
+          const exists = prev.some((e) => e.id === eventId);
+          if (exists) return prev;
+          return [...prev, updatedEvent];
+        });
       }
-    } catch (error) {
+
+      toast.success("Interest marked successfully!");
+    } catch (error: any) {
       console.error("Error marking interest:", error);
-      alert("Failed to mark interest in event");
+      toast.error(error.message || "Failed to mark interest");
     }
+  };
+
+  const handleCompleteRegistration = (eventId: number) => {
+    // Navigate to event details page with registration dialog open
+    router.push(`/events/${eventId}?action=register`);
   };
 
   // Add new effect for fetching past events
@@ -780,6 +843,57 @@ export default function EventsPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
+  const renderEventActions = (event: any) => {
+    if (!isSignedIn) {
+      return (
+        <SignInButton>
+          <Button className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
+            Sign in to Register
+          </Button>
+        </SignInButton>
+      );
+    }
+
+    if (event.status === "registered") {
+      return (
+        <Button
+          className="w-full bg-purple-100 text-purple-600 hover:bg-purple-200"
+          disabled
+        >
+          Registered
+        </Button>
+      );
+    }
+
+    if (event.status === "interested") {
+      return (
+        <Button
+          onClick={() => handleCompleteRegistration(event.id)}
+          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+        >
+          Complete Registration
+        </Button>
+      );
+    }
+
+    return (
+      <Button
+        onClick={() => handleInterest(event.id)}
+        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+      >
+        I'm Interested
+      </Button>
+    );
+  };
+
+  // Update the EventCard component to use the new renderEventActions
+  const EventCard = ({ event }: { event: any }) => (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow duration-200">
+      {/* ... rest of the EventCard content ... */}
+      <div className="p-4">{renderEventActions(event)}</div>
+    </div>
+  );
+
   if (pageLoading) {
     return (
       <MainLayout>
@@ -793,16 +907,75 @@ export default function EventsPage() {
   return (
     <MainLayout>
       <div className="min-h-screen flex flex-col bg-gradient-to-b from-gray-50 to-white">
-        <main className="flex-grow pt-24 pb-12 container mx-auto px-4">
+        <main className="flex-grow container mx-auto px-4">
           {/* Hero Section */}
-          <div className="mb-12 text-center max-w-3xl mx-auto">
-            <h1 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600 mb-4">
-              Discover Local Events
-            </h1>
-            <p className="text-lg text-gray-600">
-              Connect with your community through exciting events, from garage
-              sales to festivals.
-            </p>
+          <div className="relative my-8 mx-4 z-0">
+            <motion.div
+              className="relative rounded-2xl shadow-lg hover:shadow-xl transition-all duration-700 bg-white"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+            >
+              {/* Background gradient with subtle particles */}
+              <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+                <motion.div
+                  className={`absolute inset-0 bg-gradient-to-r ${heroContent[currentHeroIndex].bgGradient}`}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 1.5 }}
+                />
+
+                {/* Subtle floating particles */}
+                {[...Array(3)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    className={`absolute w-48 h-48 rounded-full bg-gradient-to-r ${heroContent[currentHeroIndex].gradient} opacity-5 blur-2xl pointer-events-none`}
+                    initial={{
+                      x: -50 + i * 50,
+                      y: -20 + i * 20,
+                    }}
+                    animate={{
+                      x: [-50 + i * 50, 0 + i * 50, -50 + i * 50],
+                      y: [-20 + i * 20, 0 + i * 20, -20 + i * 20],
+                    }}
+                    transition={{
+                      duration: 12 + i * 4,
+                      repeat: Infinity,
+                      repeatType: "reverse",
+                      ease: "linear",
+                    }}
+                    style={{
+                      left: `${25 + i * 25}%`,
+                      top: `${30 + (i % 2) * 20}%`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Content */}
+              <div className="relative px-8 py-16 backdrop-blur-[1px] select-none cursor-default">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={currentHeroIndex}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.8, ease: "easeOut" }}
+                    className="max-w-3xl mx-auto text-center"
+                  >
+                    <motion.h1
+                      className={`text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r ${heroContent[currentHeroIndex].gradient} mb-4 select-none`}
+                    >
+                      {heroContent[currentHeroIndex].title}
+                    </motion.h1>
+                    <motion.p className="text-lg text-gray-600 select-none">
+                      {heroContent[currentHeroIndex].subtitle}
+                    </motion.p>
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+            </motion.div>
           </div>
 
           {/* Search and Filter Section */}
@@ -1180,7 +1353,7 @@ export default function EventsPage() {
                 ) : nearbyEvents.length > 0 ? (
                   <EventCardsGrid
                     events={sortEvents(nearbyEvents)}
-                    onInterest={markInterest}
+                    onInterest={handleInterest}
                     showDistance={true}
                   />
                 ) : (
@@ -1220,7 +1393,7 @@ export default function EventsPage() {
                 ) : (
                   <EventCardsGrid
                     events={sortEvents(applyFilter(filteredEvents))}
-                    onInterest={markInterest}
+                    onInterest={handleInterest}
                     showDistance={filters.showNearby}
                   />
                 )}

@@ -191,52 +191,58 @@ export function MainNav() {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-      <div className="container mx-auto flex justify-between items-center py-4 px-4">
-        <div className="flex items-center gap-2">
+    <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <div className="container mx-auto flex items-center justify-between py-4 px-4">
+        {/* Logo - Left */}
+        <div className="w-[260px]">
           <Link href="/home">
             <Image
               src="/assets/CPlogo.svg"
               alt="Logo"
-              width={300}
-              height={300}
+              width={500}
+              height={500}
               priority
+              className="w-auto h-auto"
             />
           </Link>
         </div>
 
-        <Menubar className="hidden md:flex">
-          <Link
-            href="/home"
-            className="text-sm px-3 py-2 font-medium rounded-md"
-          >
-            Home
-          </Link>
-          <Link
-            href="/about"
-            className="text-sm px-3 py-2 font-medium rounded-md"
-          >
-            About
-          </Link>
-          {getContextMenuItems()}
-          {isAdmin && (
-            <MenubarMenu>
-              <MenubarTrigger>Admin</MenubarTrigger>
-              <MenubarContent>
-                <MenubarItem>
-                  <Link href="/admind" className="flex w-full">
-                    Admin Dashboard
-                  </Link>
-                </MenubarItem>
-              </MenubarContent>
-            </MenubarMenu>
-          )}
-        </Menubar>
+        {/* Menu Items - Center */}
+        <div className="flex-1 flex justify-center">
+          <Menubar className="hidden md:flex">
+            <Link
+              href="/home"
+              className="text-sm px-3 py-2 font-medium rounded-md"
+            >
+              Home
+            </Link>
+            <Link
+              href="/about"
+              className="text-sm px-3 py-2 font-medium rounded-md"
+            >
+              About
+            </Link>
+            {getContextMenuItems()}
+            {isAdmin && (
+              <MenubarMenu>
+                <MenubarTrigger>Admin</MenubarTrigger>
+                <MenubarContent>
+                  <MenubarItem>
+                    <Link href="/admind" className="flex w-full">
+                      Admin Dashboard
+                    </Link>
+                  </MenubarItem>
+                </MenubarContent>
+              </MenubarMenu>
+            )}
+          </Menubar>
+        </div>
 
-        <div className="flex items-center gap-4">
+        {/* User Actions - Right */}
+        <div className="w-[200px] flex items-center justify-end gap-4">
           <SignedIn>
             <Link href="/addevent">
-              <Button className="hidden md:flex items-center gap-2">
+              <Button className="hidden md:flex items-center gap-2 bg-purple-600 text-white hover:bg-purple-700">
                 <PlusCircle size={16} />
                 Create Event
               </Button>

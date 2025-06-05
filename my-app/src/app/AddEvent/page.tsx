@@ -423,23 +423,18 @@ export default function AddEventPage() {
       // Log the form values
       console.log("Form values:", values);
 
-      // Format dates to ISO string
+      // Format dates to ISO string with IST timezone
       const formatDate = (dateString: string) => {
         console.log("Formatting date:", dateString);
 
-        // Create a date object in local timezone
-        const localDate = new Date(dateString);
+        // Create a date object and set to IST timezone
+        const date = new Date(dateString);
+        const istDate = new Date(
+          date.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+        );
+        const isoString = istDate.toISOString();
 
-        // Convert to UTC
-        const year = localDate.getUTCFullYear();
-        const month = String(localDate.getUTCMonth() + 1).padStart(2, "0");
-        const day = String(localDate.getUTCDate()).padStart(2, "0");
-        const hours = String(localDate.getUTCHours()).padStart(2, "0");
-        const minutes = String(localDate.getUTCMinutes()).padStart(2, "0");
-
-        // Format as ISO string with timezone
-        const isoString = `${year}-${month}-${day}T${hours}:${minutes}:00Z`;
-        console.log("Formatted to UTC:", isoString);
+        console.log("Formatted to IST:", isoString);
         return isoString;
       };
 
@@ -470,12 +465,6 @@ export default function AddEventPage() {
       formData.append("end_date", formattedEndDate);
       formData.append("registration_start", formattedRegStart);
       formData.append("registration_end", formattedRegEnd);
-
-      // Log the final FormData
-      console.log("FormData entries:");
-      for (let [key, value] of formData.entries()) {
-        console.log(`${key}: ${value}`);
-      }
 
       if (values.image instanceof File) {
         formData.append("image", values.image);
@@ -602,7 +591,7 @@ export default function AddEventPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className="text-gray-700">
-                            Location
+                            {/* Location */}
                           </FormLabel>
                           <div className="relative">
                             <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import List, Optional, Annotated, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 import os
 import logging
@@ -21,6 +21,7 @@ import requests
 from math import radians, sin, cos, sqrt, atan2
 import googlemaps
 from sqlalchemy import inspect
+import pytz
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +51,9 @@ import googlemaps
 # Add after other configuration constants
 GOOGLE_MAPS_API_KEY = "AIzaSyD69HwBjD9rZvbVVgumIWVG94TSIiQJDd0" 
 gmaps = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+
+# Add after other configuration constants
+IST = pytz.timezone('Asia/Kolkata')
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -327,16 +331,32 @@ class EventResponse(BaseModel):
 
 class EventRegistrationCreate(BaseModel):
     number_of_attendees: int = Field(ge=1, description="Number of attendees must be at least 1")
-    attendees: List[str] = Field(
+    attendees: List[dict] = Field(
         ...,
-        min_items=1,
-        description="List of attendee names"
+        description="List of attendee details including name, age, and phone"
     )
 
     @validator("attendees")
     def validate_attendees(cls, v):
-        if not all(name.strip() for name in v):
-            raise ValueError("Attendee names cannot be empty")
+        if not all(isinstance(attendee, dict) for attendee in v):
+            raise ValueError("Each attendee must be a dictionary")
+        
+        if not all(
+            isinstance(attendee.get("name"), str) and 
+            isinstance(attendee.get("age"), (int, str)) and 
+            isinstance(attendee.get("phone"), str)
+            for attendee in v
+        ):
+            raise ValueError("Each attendee must have a name, age, and phone number")
+        
+        # Convert age to int if it's a string
+        for attendee in v:
+            if isinstance(attendee.get("age"), str):
+                try:
+                    attendee["age"] = int(attendee["age"])
+                except (ValueError, TypeError):
+                    raise ValueError("Age must be a valid number")
+        
         if len(v) > 10:
             raise ValueError("Maximum 10 attendees allowed per registration")
         return v
@@ -495,14 +515,13 @@ async def create_event(
     logger.info(f"Creating event - Received dates: start_date={start_date}, end_date={end_date}, reg_start={registration_start}, reg_end={registration_end}")
     logger.info(f"Received coordinates: lat={latitude}, lng={longitude}")
     
+    # Parse datetime strings and convert to IST
     try:
-        # Parse datetime strings
-        start_date_dt = datetime.fromisoformat(start_date)
-        end_date_dt = datetime.fromisoformat(end_date)
-        registration_start_dt = datetime.fromisoformat(registration_start)
-        registration_end_dt = datetime.fromisoformat(registration_end)
-        
-        logger.info(f"Parsed dates: start={start_date_dt}, end={end_date_dt}, reg_start={registration_start_dt}, reg_end={registration_end_dt}")
+        start_date_dt = datetime.fromisoformat(start_date).astimezone(IST)
+        end_date_dt = datetime.fromisoformat(end_date).astimezone(IST)
+        registration_start_dt = datetime.fromisoformat(registration_start).astimezone(IST)
+        registration_end_dt = datetime.fromisoformat(registration_end).astimezone(IST)
+        logger.info(f"Parsed dates (IST): start={start_date_dt}, end={end_date_dt}, reg_start={registration_start_dt}, reg_end={registration_end_dt}")
     except ValueError as e:
         logger.error(f"Date parsing error: {str(e)}")
         raise HTTPException(
@@ -710,13 +729,13 @@ async def update_event(
     if type:
         event.type = type
     if start_date:
-        event.start_date = datetime.fromisoformat(start_date)
+        event.start_date = datetime.fromisoformat(start_date).astimezone(IST)
     if end_date:
-        event.end_date = datetime.fromisoformat(end_date)
+        event.end_date = datetime.fromisoformat(end_date).astimezone(IST)
     if registration_start:
-        event.registration_start = datetime.fromisoformat(registration_start)
+        event.registration_start = datetime.fromisoformat(registration_start).astimezone(IST)
     if registration_end:
-        event.registration_end = datetime.fromisoformat(registration_end)
+        event.registration_end = datetime.fromisoformat(registration_end).astimezone(IST)
     
     # Handle image upload if provided
     if image:
@@ -819,7 +838,7 @@ async def register_for_event(
         )
     
     # Check if registration period is open
-    now = datetime.utcnow()
+    now = datetime.now(IST)
     if now < event.registration_start or now > event.registration_end:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -933,32 +952,20 @@ async def confirm_registration(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # Log the incoming request data
+    logger.info(f"Received registration confirmation request for event {event_id}")
+    logger.info(f"Registration data: {registration_data.dict()}")
+    logger.info(f"Number of attendees: {registration_data.number_of_attendees}")
+    logger.info(f"Attendees: {registration_data.attendees}")
+    
     # Fetch event
     event = db.query(Event).filter(Event.id == event_id).first()
     
     if not event:
+        logger.error(f"Event {event_id} not found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Event not found"
-        )
-    
-    # Check if registration period is open
-    now = datetime.utcnow()
-    # Add a buffer time of 24 hours to account for timezone differences
-    buffer_time = timedelta(hours=24)
-    registration_start_with_buffer = event.registration_start - buffer_time
-    registration_end_with_buffer = event.registration_end + buffer_time
-    
-    logger.info(f"Registration period check for event {event_id}:")
-    logger.info(f"Current time (UTC): {now}")
-    logger.info(f"Registration start (with buffer): {registration_start_with_buffer}")
-    logger.info(f"Registration end (with buffer): {registration_end_with_buffer}")
-    
-    if now < registration_start_with_buffer or now > registration_end_with_buffer:
-        logger.warning(f"Registration not open. Current time: {now}, Registration period (with buffer): {registration_start_with_buffer} to {registration_end_with_buffer}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Registration is not open for this event"
         )
     
     # Get existing registration
@@ -968,46 +975,56 @@ async def confirm_registration(
     ).first()
     
     if not registration or registration.status == "cancelled":
+        logger.error(f"No existing interest found for user {current_user.id} in event {event_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You must first mark interest in this event"
         )
     
     if registration.status == "registered":
+        logger.error(f"User {current_user.id} is already registered for event {event_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You are already registered for this event"
         )
     
-    # Update registration
-    old_attendees_count = registration.number_of_attendees
-    registration.status = "registered"
-    registration.attendees = json.dumps(registration_data.attendees)
-    registration.number_of_attendees = registration_data.number_of_attendees
-    
-    # Update event attendees count
-    # First subtract the old count (from "interested" status)
-    event.attendees_count = event.attendees_count - old_attendees_count
-    # Then add the new count
-    event.attendees_count = event.attendees_count + registration_data.number_of_attendees
-    
-    db.commit()
-    db.refresh(registration)
-    
-    # Create reminder notification
-    reminder_date = event.start_date - timedelta(days=1)
-    if reminder_date > now:
-        notification = Notification(
-            event_id=event.id,
-            user_id=current_user.id,
-            title="Event Reminder",
-            message=f"Reminder: The event '{event.title}' is tomorrow!",
-            notification_type="reminder"
-        )
-        db.add(notification)
+    try:
+        # Update registration
+        old_attendees_count = registration.number_of_attendees
+        registration.status = "registered"
+        registration.attendees = json.dumps(registration_data.attendees)
+        registration.number_of_attendees = registration_data.number_of_attendees
+        
+        # Update event attendees count
+        event.attendees_count = event.attendees_count - old_attendees_count + registration_data.number_of_attendees
+        
         db.commit()
-    
-    return registration
+        db.refresh(registration)
+        
+        # Create reminder notification
+        now = datetime.now(IST)
+        event_start_date = event.start_date.astimezone(IST)
+        reminder_date = event_start_date - timedelta(days=1)
+        
+        if reminder_date > now:
+            notification = Notification(
+                event_id=event.id,
+                user_id=current_user.id,
+                title="Event Reminder",
+                message=f"Reminder: The event '{event.title}' is tomorrow!",
+                notification_type="reminder"
+            )
+            db.add(notification)
+            db.commit()
+        
+        logger.info(f"Successfully registered user {current_user.id} for event {event_id}")
+        return registration
+    except Exception as e:
+        logger.error(f"Error during registration: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Registration failed: {str(e)}"
+        )
 
 @app.post("/events/{event_id}/cancel-registration")
 async def cancel_registration(
@@ -1567,14 +1584,43 @@ async def get_event_dashboard(
     
     # Get event statistics
     likes_count = db.query(EventLike).filter(EventLike.event_id == event_id).count()
-    registrations_count = db.query(EventRegistration).filter(
+    
+    # Get registrations with detailed information
+    registrations = db.query(EventRegistration).filter(
         EventRegistration.event_id == event_id,
         EventRegistration.status == "registered"
-    ).count()
+    ).all()
+    
+    # Get interested users count
     interested_count = db.query(EventRegistration).filter(
         EventRegistration.event_id == event_id,
         EventRegistration.status == "interested"
     ).count()
+    
+    # Process registration data
+    total_registrations = len(registrations)
+    all_attendees = []
+    total_age = 0
+    age_count = 0
+    
+    for registration in registrations:
+        attendees = json.loads(registration.attendees)
+        for attendee in attendees:
+            all_attendees.append({
+                "name": attendee.get("name", ""),
+                "age": attendee.get("age", ""),
+                "phone": attendee.get("phone", "")
+            })
+            # Calculate average age if age is provided
+            try:
+                age = int(attendee.get("age", ""))
+                total_age += age
+                age_count += 1
+            except (ValueError, TypeError):
+                continue
+    
+    # Calculate average age
+    avg_age = round(total_age / age_count, 1) if age_count > 0 else None
     
     # Get registration trend (last 7 days)
     seven_days_ago = datetime.utcnow() - timedelta(days=7)
@@ -1588,12 +1634,43 @@ async def get_event_dashboard(
         func.date(EventRegistration.registered_at)
     ).all()
     
+    # Get age distribution
+    age_groups = {
+        "0-18": 0,
+        "19-25": 0,
+        "26-35": 0,
+        "36-50": 0,
+        "50+": 0
+    }
+    
+    for attendee in all_attendees:
+        try:
+            age = int(attendee.get("age", ""))
+            if age <= 18:
+                age_groups["0-18"] += 1
+            elif age <= 25:
+                age_groups["19-25"] += 1
+            elif age <= 35:
+                age_groups["26-35"] += 1
+            elif age <= 50:
+                age_groups["36-50"] += 1
+            else:
+                age_groups["50+"] += 1
+        except (ValueError, TypeError):
+            continue
+    
     return {
         "event_id": event_id,
         "title": event.title,
         "views": event.views,
         "likes": likes_count,
-        "registrations": registrations_count,
+        "registrations": {
+            "total": total_registrations,
+            "total_attendees": len(all_attendees),
+            "average_age": avg_age,
+            "age_distribution": age_groups,
+            "attendees": all_attendees
+        },
         "interested": interested_count,
         "daily_registrations": [
             {"date": str(day.date), "count": day.count}

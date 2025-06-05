@@ -40,7 +40,23 @@ interface DashboardData {
   title: string;
   views: number;
   likes: number;
-  registrations: number;
+  registrations: {
+    total: number;
+    total_attendees: number;
+    average_age: number | null;
+    age_distribution: {
+      "0-18": number;
+      "19-25": number;
+      "26-35": number;
+      "36-50": number;
+      "50+": number;
+    };
+    attendees: Array<{
+      name: string;
+      age: string;
+      phone: string;
+    }>;
+  };
   interested: number;
   daily_registrations: Array<{
     date: string;
@@ -132,136 +148,221 @@ export default function EventDashboard() {
         <div className="container mx-auto px-4 py-8">
           <div className="max-w-7xl mx-auto space-y-8">
             {/* Header */}
-            <div className="flex flex-col gap-6">
+            <div className="flex items-center gap-4 mb-8">
               <Button
                 variant="ghost"
-                className="w-fit text-gray-600 hover:text-purple-600 transition-colors"
                 onClick={() => router.back()}
+                className="hover:bg-gray-100"
               >
-                <ArrowLeft className="w-4 h-4 mr-2" />
+                <ArrowLeft className="h-5 w-5 mr-2" />
                 Back
               </Button>
-              <div className="space-y-2">
-                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600">
-                  {dashboardData.title} Dashboard
-                </h1>
-                <p className="text-gray-600">
-                  Track your event's performance and engagement metrics
-                </p>
-              </div>
+              <h1 className="text-2xl font-bold">
+                {dashboardData?.title} Dashboard
+              </h1>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">
+            {/* Stats Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">
                     Total Views
                   </CardTitle>
-                  <Eye className="h-4 w-4 text-purple-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-gray-900">
-                    {dashboardData.views}
+                  <div className="flex items-center">
+                    <Eye className="h-5 w-5 text-gray-400 mr-2" />
+                    <span className="text-2xl font-bold">
+                      {dashboardData?.views}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">
                     Total Likes
                   </CardTitle>
-                  <Heart className="h-4 w-4 text-purple-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-gray-900">
-                    {dashboardData.likes}
+                  <div className="flex items-center">
+                    <Heart className="h-5 w-5 text-red-400 mr-2" />
+                    <span className="text-2xl font-bold">
+                      {dashboardData?.likes}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">
-                    Total Registrations
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">
+                    Registrations
                   </CardTitle>
-                  <Users className="h-4 w-4 text-purple-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-gray-900">
-                    {dashboardData.registrations}
+                  <div className="flex items-center">
+                    <Users className="h-5 w-5 text-green-400 mr-2" />
+                    <span className="text-2xl font-bold">
+                      {dashboardData?.registrations.total}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-600">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-gray-500">
                     Interested Users
                   </CardTitle>
-                  <TrendingUp className="h-4 w-4 text-purple-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-gray-900">
-                    {dashboardData.interested}
+                  <div className="flex items-center">
+                    <TrendingUp className="h-5 w-5 text-blue-400 mr-2" />
+                    <span className="text-2xl font-bold">
+                      {dashboardData?.interested}
+                    </span>
                   </div>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Registration Trend Chart */}
-            <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
-              <CardHeader>
-                <CardTitle className="text-xl font-semibold text-gray-800">
-                  Registration Trend
-                </CardTitle>
-                <CardDescription className="text-gray-600">
-                  Track daily registration activity
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-[300px]">
+            {/* Registration Details */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              {/* Registration Stats */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Registration Statistics</CardTitle>
+                  <CardDescription>
+                    Detailed breakdown of registrations
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">
+                        Total Attendees
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {dashboardData?.registrations.total_attendees}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-500">
+                        Average Age
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {dashboardData?.registrations.average_age
+                          ? `${dashboardData.registrations.average_age} years`
+                          : "N/A"}
+                      </p>
+                    </div>
+                    <Separator />
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-2">
+                        Age Distribution
+                      </p>
+                      <div className="space-y-2">
+                        {dashboardData?.registrations.age_distribution &&
+                          Object.entries(
+                            dashboardData.registrations.age_distribution
+                          ).map(([range, count]) => (
+                            <div
+                              key={range}
+                              className="flex items-center justify-between"
+                            >
+                              <span className="text-sm text-gray-600">
+                                {range}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-purple-500 rounded-full"
+                                    style={{
+                                      width: `${
+                                        (count /
+                                          dashboardData.registrations
+                                            .total_attendees) *
+                                        100
+                                      }%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="text-sm font-medium w-8 text-right">
+                                  {count}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Registration Trend */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Registration Trend</CardTitle>
+                  <CardDescription>Last 7 days</CardDescription>
+                </CardHeader>
+                <CardContent className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dashboardData.daily_registrations}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                      <XAxis dataKey="date" stroke="#6B7280" />
-                      <YAxis stroke="#6B7280" />
+                    <LineChart
+                      data={dashboardData?.daily_registrations}
+                      margin={{ top: 5, right: 20, bottom: 5, left: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
                       <Tooltip />
                       <Line
                         type="monotone"
                         dataKey="count"
-                        stroke="#9C5789"
+                        stroke="#8884d8"
                         strokeWidth={2}
-                        dot={{ fill: "#9C5789" }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
 
-            {/* Event Details */}
-            <Card className="bg-white border border-gray-100 shadow-sm rounded-xl">
+            {/* Attendees List */}
+            <Card>
               <CardHeader>
-                <CardTitle className="text-xl font-semibold text-gray-800">
-                  Event Details
-                </CardTitle>
+                <CardTitle>Registered Attendees</CardTitle>
+                <CardDescription>
+                  List of all registered attendees
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar className="w-4 h-4 text-purple-500" />
-                  <span>
-                    Created:{" "}
-                    {new Date(dashboardData.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-gray-600">
-                  <Clock className="w-4 h-4 text-purple-500" />
-                  <span>
-                    Last Updated:{" "}
-                    {new Date(dashboardData.last_updated).toLocaleDateString()}
-                  </span>
+              <CardContent>
+                <div className="rounded-md border">
+                  <div className="grid grid-cols-3 gap-4 p-4 font-medium text-gray-500 border-b">
+                    <div>Name</div>
+                    <div>Age</div>
+                    <div>Phone</div>
+                  </div>
+                  <div className="divide-y">
+                    {dashboardData?.registrations.attendees.map(
+                      (attendee, index) => (
+                        <div
+                          key={index}
+                          className="grid grid-cols-3 gap-4 p-4 hover:bg-gray-50"
+                        >
+                          <div className="text-gray-900">{attendee.name}</div>
+                          <div className="text-gray-600">
+                            {attendee.age || "N/A"}
+                          </div>
+                          <div className="text-gray-600">
+                            {attendee.phone || "N/A"}
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

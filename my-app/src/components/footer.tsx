@@ -6,17 +6,16 @@ import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Github, Twitter, Facebook } from "lucide-react";
-import {
-  ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from "@clerk/nextjs";
+import { SignInButton } from "@clerk/nextjs";
 
 export default function Footer() {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, user } = useUser();
+  const isOrganizer = user?.publicMetadata?.role === "organizer";
+
+  const getDashboardLink = () => {
+    if (!isSignedIn) return null;
+    return isOrganizer ? "/organizer-dashboard" : "/user-dashboard";
+  };
 
   return (
     <footer className="bg-gray-900 text-gray-200 py-12 px-4 sm:px-6 lg:px-8 border-t border-gray-800">
@@ -69,12 +68,7 @@ export default function Footer() {
               {isSignedIn ? (
                 <li>
                   <Link
-                    href={
-                      isSignedIn &&
-                      (useUser().user?.publicMetadata?.role === "organizer"
-                        ? "/organizer-dashboard"
-                        : "/user-dashboard")
-                    }
+                    href={getDashboardLink() || "#"}
                     className="hover:text-teal-400 transition-colors duration-200"
                   >
                     Dashboard
@@ -82,7 +76,11 @@ export default function Footer() {
                 </li>
               ) : (
                 <li>
-                  return <SignInButton />
+                  <SignInButton>
+                    <button className="hover:text-teal-400 transition-colors duration-200">
+                      Sign In
+                    </button>
+                  </SignInButton>
                 </li>
               )}
             </ul>

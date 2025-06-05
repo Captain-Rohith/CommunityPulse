@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,8 @@ import {
   Eye,
   ArrowLeft,
   User2,
+  X,
+  PlusCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -94,6 +96,7 @@ interface RegistrationStatus {
 export default function EventDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
   const [event, setEvent] = useState<Event | null>(null);
@@ -101,7 +104,9 @@ export default function EventDetailsPage() {
   const [showRegistrationDialog, setShowRegistrationDialog] = useState(false);
   const [registrationStatus, setRegistrationStatus] =
     useState<RegistrationStatus | null>(null);
-  const [attendees, setAttendees] = useState<string[]>([""]);
+  const [attendees, setAttendees] = useState<
+    Array<{ name: string; age: string; phone: string }>
+  >([{ name: "", age: "", phone: "" }]);
   const [numberOfAttendees, setNumberOfAttendees] = useState(1);
   const [showUnregisterConfirm, setShowUnregisterConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -114,6 +119,16 @@ export default function EventDetailsPage() {
   const [reportReason, setReportReason] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Check for registration action in URL
+  useEffect(() => {
+    if (
+      searchParams?.get("action") === "register" &&
+      registrationStatus?.status === "interested"
+    ) {
+      setShowRegistrationDialog(true);
+    }
+  }, [searchParams, registrationStatus]);
 
   useEffect(() => {
     const fetchEventDetails = async () => {
@@ -168,7 +183,13 @@ export default function EventDetailsPage() {
           const statusData = await statusResponse.json();
           setRegistrationStatus(statusData);
           if (statusData.registration) {
-            setAttendees(statusData.registration.attendees);
+            setAttendees(
+              statusData.registration.attendees.map((name: string) => ({
+                name,
+                age: "",
+                phone: "",
+              }))
+            );
             setNumberOfAttendees(statusData.registration.number_of_attendees);
           }
         }
@@ -198,7 +219,29 @@ export default function EventDetailsPage() {
     const registrationStart = new Date(event.registration_start);
     const registrationEnd = new Date(event.registration_end);
 
-    if (now < registrationStart) {
+    // Add buffer time for timezone differences
+    const bufferTime = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    const registrationStartWithBuffer = new Date(
+      registrationStart.getTime() - bufferTime
+    );
+    const registrationEndWithBuffer = new Date(
+      registrationEnd.getTime() + bufferTime
+    );
+
+    // Convert all dates to UTC for consistent comparison
+    const nowUTC = new Date(now.toISOString());
+    const startUTC = new Date(registrationStartWithBuffer.toISOString());
+    const endUTC = new Date(registrationEndWithBuffer.toISOString());
+
+    console.log("Registration status check:", {
+      now: nowUTC.toISOString(),
+      registrationStart: registrationStart.toISOString(),
+      registrationEnd: registrationEnd.toISOString(),
+      registrationStartWithBuffer: startUTC.toISOString(),
+      registrationEndWithBuffer: endUTC.toISOString(),
+    });
+
+    if (nowUTC < startUTC) {
       return {
         isOpen: false,
         message: `Registration opens on ${formatDate(
@@ -206,7 +249,7 @@ export default function EventDetailsPage() {
         )} at ${formatTime(event.registration_start)}`,
       };
     }
-    if (now > registrationEnd) {
+    if (nowUTC > endUTC) {
       return {
         isOpen: false,
         message: "Registration period has ended",
@@ -238,15 +281,16 @@ export default function EventDetailsPage() {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
       });
 
       if (!response.ok) {
-        throw new Error("Failed to mark interest");
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Failed to mark interest");
       }
 
       const data = await response.json();
-      setShowRegistrationDialog(true);
 
       // Update registration status immediately
       setRegistrationStatus({
@@ -267,37 +311,31 @@ export default function EventDetailsPage() {
   };
 
   const handleConfirmRegistration = async () => {
-    if (!isSignedIn) {
-      toast.error("Please sign in to register for this event");
-      return;
-    }
-
-    if (!event) return;
-
-    const registrationStatus = getRegistrationStatus(event);
-    if (!registrationStatus.isOpen) {
-      toast.error(registrationStatus.message);
-      return;
-    }
-
-    // Filter out empty attendee names
-    const filteredAttendees = attendees.filter((name) => name.trim() !== "");
-
-    // Validate attendees
-    if (filteredAttendees.length === 0) {
-      toast.error("Please add at least one attendee");
-      return;
-    }
-
-    if (filteredAttendees.length > 10) {
-      toast.error("Maximum 10 attendees allowed per registration");
-      return;
-    }
-
     try {
+      // Validate attendee data
+      const isValid = attendees.every(
+        (attendee) =>
+          attendee.name.trim() &&
+          /^\d+$/.test(attendee.age) &&
+          parseInt(attendee.age) > 0 &&
+          parseInt(attendee.age) < 150 &&
+          /^[\d\s\-\+\(\)]+$/.test(attendee.phone.trim())
+      );
+
+      if (!isValid) {
+        toast.error("Please fill in valid details for all attendees");
+        return;
+      }
+
+      const formattedAttendees = attendees.map((attendee) => ({
+        name: attendee.name.trim(),
+        age: parseInt(attendee.age),
+        phone: attendee.phone.trim(),
+      }));
+
       const token = await getToken();
       const response = await fetch(
-        `${API_URL}/events/${params.id}/confirm-registration`,
+        `${API_URL}/events/${event?.id}/confirm-registration`,
         {
           method: "POST",
           headers: {
@@ -305,8 +343,8 @@ export default function EventDetailsPage() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            attendees: filteredAttendees,
-            number_of_attendees: filteredAttendees.length,
+            number_of_attendees: numberOfAttendees,
+            attendees: formattedAttendees,
           }),
         }
       );
@@ -316,31 +354,28 @@ export default function EventDetailsPage() {
         throw new Error(errorData.detail || "Failed to confirm registration");
       }
 
+      // Update registration status immediately
+      setRegistrationStatus({
+        status: "registered",
+        registration: {
+          id: Date.now(), // Temporary ID until refresh
+          attendees: formattedAttendees.map((a) => a.name),
+          number_of_attendees: numberOfAttendees,
+          registered_at: new Date().toISOString(),
+        },
+      });
+
+      // Close the dialog
       setShowRegistrationDialog(false);
 
-      // Refresh registration status
-      const statusResponse = await fetch(
-        `${API_URL}/events/${params.id}/registration-status`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      // Remove the action parameter from URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
 
-      if (statusResponse.ok) {
-        const statusData = await statusResponse.json();
-        setRegistrationStatus(statusData);
-      }
-
-      toast.success("Successfully registered for event!");
+      toast.success("Successfully registered for the event!");
     } catch (error) {
       console.error("Error confirming registration:", error);
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to confirm registration"
-      );
+      toast.error("Failed to confirm registration");
     }
   };
 
@@ -577,9 +612,13 @@ export default function EventDetailsPage() {
     });
   };
 
-  const handleAttendeesChange = (index: number, value: string) => {
+  const handleAttendeesChange = (
+    index: number,
+    field: "name" | "age" | "phone",
+    value: string
+  ) => {
     const newAttendees = [...attendees];
-    newAttendees[index] = value;
+    newAttendees[index] = { ...newAttendees[index], [field]: value };
     setAttendees(newAttendees);
   };
 
@@ -588,7 +627,7 @@ export default function EventDetailsPage() {
       toast.error("Maximum 10 attendees allowed per registration");
       return;
     }
-    setAttendees([...attendees, ""]);
+    setAttendees([...attendees, { name: "", age: "", phone: "" }]);
     setNumberOfAttendees(numberOfAttendees + 1);
   };
 
@@ -601,6 +640,83 @@ export default function EventDetailsPage() {
     setAttendees(newAttendees);
     setNumberOfAttendees(numberOfAttendees - 1);
   };
+
+  const renderRegistrationForm = () => (
+    <div className="space-y-4">
+      {attendees.map((attendee, index) => (
+        <div
+          key={index}
+          className="space-y-4 p-4 bg-gray-50 rounded-lg relative"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor={`name-${index}`}>Name</Label>
+              <Input
+                id={`name-${index}`}
+                value={attendee.name}
+                onChange={(e) =>
+                  handleAttendeesChange(index, "name", e.target.value)
+                }
+                placeholder="Enter attendee name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`age-${index}`}>Age</Label>
+              <Input
+                id={`age-${index}`}
+                type="number"
+                value={attendee.age}
+                onChange={(e) =>
+                  handleAttendeesChange(index, "age", e.target.value)
+                }
+                placeholder="Enter age"
+                min="1"
+                max="150"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor={`phone-${index}`}>Phone Number</Label>
+              <Input
+                id={`phone-${index}`}
+                value={attendee.phone}
+                onChange={(e) =>
+                  handleAttendeesChange(index, "phone", e.target.value)
+                }
+                placeholder="Enter phone number"
+                required
+              />
+            </div>
+          </div>
+          {attendees.length > 1 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-2 right-2 text-gray-500 hover:text-red-500"
+              onClick={() => removeAttendee(index)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      ))}
+
+      <div className="flex justify-between items-center">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={addAttendee}
+          disabled={attendees.length >= 10}
+          className="flex items-center gap-2"
+        >
+          <PlusCircle className="h-4 w-4" />
+          Add Another Attendee
+        </Button>
+        <p className="text-sm text-gray-500">{attendees.length}/10 attendees</p>
+      </div>
+    </div>
+  );
 
   return (
     <MainLayout>
@@ -640,7 +756,7 @@ export default function EventDetailsPage() {
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-6 lg:p-8 space-y-4">
                 <div className="space-y-4">
                   <div className="flex justify-between items-start">
-                    <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-pink-600">
+                    <h1 className="text-4xl font-bold text-black">
                       {event.title}
                     </h1>
                     <div className="flex flex-col items-end gap-2">
@@ -967,8 +1083,167 @@ export default function EventDetailsPage() {
           </div>
         </div>
 
-        {/* Keep all existing dialogs unchanged */}
-        {/* ... existing dialogs ... */}
+        {/* Registration Dialog */}
+        <Dialog
+          open={showRegistrationDialog}
+          onOpenChange={setShowRegistrationDialog}
+        >
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Complete Registration</DialogTitle>
+              <DialogDescription>
+                Please provide details for all attendees. All fields are
+                required.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">{renderRegistrationForm()}</div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowRegistrationDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmRegistration}
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+              >
+                Confirm Registration
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Unregister Confirmation Dialog */}
+        <Dialog
+          open={showUnregisterConfirm}
+          onOpenChange={setShowUnregisterConfirm}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Unregistration</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to unregister from this event? This action
+                cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowUnregisterConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleUnregister}>
+                Unregister
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Event Confirmation Dialog */}
+        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Event</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this event? This action cannot
+                be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteEvent}>
+                Delete Event
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Report Dialog */}
+        <Dialog open={showReportDialog} onOpenChange={setShowReportDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Report Event</DialogTitle>
+              <DialogDescription>
+                Please provide details about why you're reporting this event.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Label htmlFor="report-reason">Reason</Label>
+              <textarea
+                id="report-reason"
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                className="w-full mt-2 p-2 border rounded-md"
+                rows={4}
+                placeholder="Please describe why you're reporting this event..."
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setShowReportDialog(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleReport}
+                disabled={!reportReason.trim()}
+              >
+                Submit Report
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Share Dialog */}
+        <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Share Event</DialogTitle>
+              <DialogDescription>
+                Share this event with your network
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-center gap-4 py-4">
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => handleShare("facebook")}
+              >
+                <Facebook className="w-5 h-5" />
+                Facebook
+              </Button>
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => handleShare("linkedin")}
+              >
+                <Linkedin className="w-5 h-5" />
+                LinkedIn
+              </Button>
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => handleShare("copy")}
+              >
+                {copied ? (
+                  <Check className="w-5 h-5" />
+                ) : (
+                  <Copy className="w-5 h-5" />
+                )}
+                Copy Link
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

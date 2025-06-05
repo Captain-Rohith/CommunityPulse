@@ -75,17 +75,17 @@ function EventCard({
   };
 
   const buttonText =
-    event.status === "interested"
+    event.status === "registered"
+      ? "Registered"
+      : event.status === "interested"
       ? "Complete Registration"
-      : event.userInterested
-      ? "Not Interested"
       : "I'm Interested";
 
   const buttonStyle =
-    event.status === "interested"
+    event.status === "registered"
+      ? "bg-gray-200 text-gray-800 cursor-not-allowed"
+      : event.status === "interested"
       ? "bg-purple-600 text-white hover:bg-purple-700"
-      : event.userInterested
-      ? "bg-gray-200 text-gray-800 hover:bg-gray-300"
       : "bg-primary text-primary-foreground hover:bg-primary/90";
 
   // Handle event time formatting
