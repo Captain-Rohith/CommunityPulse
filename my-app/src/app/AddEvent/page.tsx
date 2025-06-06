@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { LocationAutocomplete } from "@/components/LocationAutocomplete";
 import { MainLayout } from "@/components/layouts/MainLayout";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -47,11 +48,15 @@ const eventSchema = z
     location: z.string().min(1, "Location is required"),
     latitude: z.number().optional(),
     longitude: z.number().optional(),
-    type: z.string().refine((val) => {
-      if (val.toLowerCase() === "free") return true;
-      const price = parseInt(val);
-      return !isNaN(price) && price >= 50;
-    }, "Type must be 'Free' or a price of at least ₹50"),
+    type: z.enum(["Free", "Paid"], {
+      required_error: "Event type is required",
+    }),
+    price: z
+      .number()
+      .min(0, "Price must be 0 or greater")
+      .refine((val) => {
+        return val === 0 || val >= 50;
+      }, "Price must be 0 for free events or at least ₹50 for paid events"),
     category: z.enum(
       [
         "Garage Sale",
@@ -454,6 +459,7 @@ export default function AddEventPage() {
 
       formData.append("category", values.category);
       formData.append("type", values.type);
+      formData.append("price", values.price.toString());
 
       // Format and append dates
       const formattedStartDate = formatDate(values.start_date);
@@ -683,16 +689,15 @@ export default function AddEventPage() {
                               <Select
                                 onValueChange={(value) => {
                                   if (value === "paid") {
-                                    field.onChange("50");
+                                    field.onChange("Paid");
+                                    // Set default price when switching to paid
+                                    form.setValue("price", 50);
                                   } else {
                                     field.onChange("Free");
+                                    form.setValue("price", 0);
                                   }
                                 }}
-                                value={
-                                  field.value.toLowerCase() === "free"
-                                    ? "free"
-                                    : "paid"
-                                }
+                                value={field.value === "Free" ? "free" : "paid"}
                               >
                                 <SelectTrigger className="w-[120px] border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                                   <SelectValue placeholder="Select type" />
@@ -702,7 +707,7 @@ export default function AddEventPage() {
                                   <SelectItem value="paid">Paid</SelectItem>
                                 </SelectContent>
                               </Select>
-                              {field.value.toLowerCase() !== "free" && (
+                              {field.value === "Paid" && (
                                 <div className="flex-1">
                                   <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
@@ -711,10 +716,13 @@ export default function AddEventPage() {
                                     <input
                                       type="number"
                                       min="50"
-                                      value={field.value}
-                                      onChange={(e) =>
-                                        field.onChange(e.target.value)
-                                      }
+                                      value={form.watch("price")}
+                                      onChange={(e) => {
+                                        const price = parseFloat(
+                                          e.target.value
+                                        );
+                                        form.setValue("price", price);
+                                      }}
                                       className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                                       placeholder="Enter price"
                                     />

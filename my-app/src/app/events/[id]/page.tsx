@@ -81,16 +81,23 @@ interface Event {
   is_liked: boolean;
   type: string;
   views: number;
+  price: string;
 }
 
 interface RegistrationStatus {
   status: "none" | "interested" | "registered";
   registration: {
     id: number;
-    attendees: string[];
+    attendees: string; // This is a JSON string that will be parsed
     number_of_attendees: number;
     registered_at: string;
   } | null;
+}
+
+interface Attendee {
+  name: string;
+  age: string | number;
+  phone: string;
 }
 
 export default function EventDetailsPage() {
@@ -119,6 +126,7 @@ export default function EventDetailsPage() {
   const [reportReason, setReportReason] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showTicketDialog, setShowTicketDialog] = useState(false);
 
   // Check for registration action in URL
   useEffect(() => {
@@ -303,7 +311,7 @@ export default function EventDetailsPage() {
         status: "interested",
         registration: {
           id: data.registration_id,
-          attendees: [user?.username || ""],
+          attendees: JSON.stringify([user?.username || ""]),
           number_of_attendees: 1,
           registered_at: new Date().toISOString(),
         },
@@ -341,6 +349,16 @@ export default function EventDetailsPage() {
         phone: attendee.phone.trim(),
       }));
 
+      // For paid events, redirect to payment page
+      if (event?.type !== "Free") {
+        const searchParams = new URLSearchParams();
+        searchParams.set("attendees", JSON.stringify(formattedAttendees));
+        searchParams.set("numberOfAttendees", numberOfAttendees.toString());
+        router.push(`/events/${event?.id}/payment?${searchParams.toString()}`);
+        return;
+      }
+
+      // For free events, proceed with registration
       const token = await getToken();
       const response = await fetch(
         `${API_URL}/events/${event?.id}/confirm-registration`,
@@ -367,7 +385,7 @@ export default function EventDetailsPage() {
         status: "registered",
         registration: {
           id: Date.now(), // Temporary ID until refresh
-          attendees: formattedAttendees.map((a) => a.name),
+          attendees: JSON.stringify(formattedAttendees.map((a) => a.name)),
           number_of_attendees: numberOfAttendees,
           registered_at: new Date().toISOString(),
         },
@@ -778,7 +796,7 @@ export default function EventDetailsPage() {
                             : "bg-purple-100 text-purple-800"
                         )}
                       >
-                        {event.type}
+                        {event.type === "Free" ? "Free" : `₹${event.price}`}
                       </span>
                       <div className="flex items-center gap-2 text-gray-600">
                         <Eye className="h-4 w-4 text-purple-500" />
@@ -998,6 +1016,45 @@ export default function EventDetailsPage() {
                         )}
                       </div>
 
+                      <div className="space-y-3">
+                        <h3 className="font-semibold text-gray-800">
+                          Registration Status
+                        </h3>
+                        {registrationStatus?.status === "registered" && (
+                          <div className="flex flex-col gap-2">
+                            <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg border border-green-100">
+                              You are registered for this event
+                              {registrationStatus.registration && (
+                                <>
+                                  <br />
+                                  Number of Attendees:{" "}
+                                  {
+                                    registrationStatus.registration
+                                      .number_of_attendees
+                                  }
+                                </>
+                              )}
+                            </div>
+                            <Button
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => {
+                                if (registrationStatus.registration) {
+                                  setShowTicketDialog(true);
+                                }
+                              }}
+                            >
+                              View Your Ticket
+                            </Button>
+                          </div>
+                        )}
+                        {registrationStatus?.status === "interested" && (
+                          <div className="text-sm text-blue-600 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                            You have shown interest in this event
+                          </div>
+                        )}
+                      </div>
+
                       {(isOrganizer || isAdmin) && (
                         <div className="space-y-2 pt-4 border-t">
                           <Button
@@ -1118,7 +1175,7 @@ export default function EventDetailsPage() {
                 onClick={handleConfirmRegistration}
                 className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
               >
-                Confirm Registration
+                {event?.type === "Free" ? "Confirm Registration" : "Pay Now"}
               </Button>
             </div>
           </DialogContent>
@@ -1251,6 +1308,124 @@ export default function EventDetailsPage() {
                 )}
                 Copy Link
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Ticket Dialog */}
+        <Dialog open={showTicketDialog} onOpenChange={setShowTicketDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-center">Event Ticket</DialogTitle>
+            </DialogHeader>
+            <div className="flex flex-col items-center space-y-4 py-6">
+              <div className="rounded-full bg-green-100 p-3">
+                <Check className="h-8 w-8 text-green-600" />
+              </div>
+              <div className="text-center space-y-4 w-full">
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <p className="text-lg font-semibold text-purple-800">
+                    {event?.title}
+                  </p>
+                  <p className="text-sm text-purple-600">
+                    Ticket ID: #{registrationStatus?.registration?.id}
+                  </p>
+                </div>
+
+                {registrationStatus?.registration && (
+                  <>
+                    <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600">
+                          Number of Attendees:
+                        </span>
+                        <span className="font-medium">
+                          {registrationStatus.registration.number_of_attendees}
+                        </span>
+                      </div>
+
+                      <div className="border-t border-gray-200 pt-3">
+                        <p className="font-medium text-left mb-2">
+                          Attendee Details:
+                        </p>
+                        <div className="space-y-2">
+                          {(() => {
+                            try {
+                              const attendeesData = JSON.parse(
+                                registrationStatus.registration.attendees
+                              ) as Array<string | Attendee>;
+                              return attendeesData.map((attendee, index) => {
+                                const formattedAttendee: Attendee =
+                                  typeof attendee === "string"
+                                    ? {
+                                        name: attendee,
+                                        age: "N/A",
+                                        phone: "N/A",
+                                      }
+                                    : attendee;
+
+                                return (
+                                  <div
+                                    key={index}
+                                    className="text-sm bg-white p-3 rounded border border-gray-100"
+                                  >
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <p className="text-gray-600">Name:</p>
+                                      <p className="font-medium text-right">
+                                        {formattedAttendee.name}
+                                      </p>
+                                      <p className="text-gray-600">Age:</p>
+                                      <p className="font-medium text-right">
+                                        {formattedAttendee.age}
+                                      </p>
+                                      <p className="text-gray-600">Phone:</p>
+                                      <p className="font-medium text-right">
+                                        {formattedAttendee.phone}
+                                      </p>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            } catch (error) {
+                              console.error("Error parsing attendees:", error);
+                              return null;
+                            }
+                          })()}
+                        </div>
+                      </div>
+
+                      {event?.type !== "Free" && (
+                        <div className="border-t border-gray-200 pt-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-600">Amount Paid:</span>
+                            <span className="font-medium">
+                              ₹
+                              {Number(event?.price) *
+                                registrationStatus.registration
+                                  .number_of_attendees}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-gray-500">
+                      <p>
+                        Registration Date:{" "}
+                        {new Date(
+                          registrationStatus.registration.registered_at
+                        ).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>

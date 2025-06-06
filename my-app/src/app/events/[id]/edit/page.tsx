@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MainLayout } from "@/components/layouts/MainLayout";
+import { Input } from "@/components/ui/input";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -39,11 +40,15 @@ const eventSchema = z
     location: z.string().min(1, "Location is required"),
     latitude: z.number().optional(),
     longitude: z.number().optional(),
-    type: z.string().refine((val) => {
-      if (val.toLowerCase() === "free") return true;
-      const price = parseInt(val);
-      return !isNaN(price) && price >= 50;
-    }, "Type must be 'Free' or a price of at least ₹50"),
+    type: z.enum(["Free", "Paid"], {
+      required_error: "Event type is required",
+    }),
+    price: z
+      .number()
+      .min(0, "Price must be 0 or greater")
+      .refine((val) => {
+        return val === 0 || val >= 50;
+      }, "Price must be 0 for free events or at least ₹50 for paid events"),
     category: z.enum(
       [
         "Garage Sale",
@@ -427,6 +432,7 @@ export default function EditEventPage() {
       formData.append("longitude", values.longitude?.toString() || "");
       formData.append("category", values.category);
       formData.append("type", values.type);
+      formData.append("price", values.price.toString());
       formData.append("start_date", values.start_date);
       formData.append("end_date", values.end_date);
       formData.append("registration_start", values.registration_start);
@@ -505,25 +511,28 @@ export default function EditEventPage() {
                   name="type"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Event Type</FormLabel>
+                      <FormLabel className="text-gray-700">
+                        Event Type
+                      </FormLabel>
                       <FormControl>
                         <div className="flex gap-2">
                           <Select
                             onValueChange={(value) => {
                               if (value === "paid") {
-                                // When switching to paid, set a default price
-                                field.onChange("50");
+                                field.onChange("Paid");
+                                // Set default price when switching to paid
+                                form.setValue(
+                                  "price",
+                                  form.getValues("price") || 50
+                                );
                               } else {
                                 field.onChange("Free");
+                                form.setValue("price", 0);
                               }
                             }}
-                            value={
-                              field.value.toLowerCase() === "free"
-                                ? "free"
-                                : "paid"
-                            }
+                            value={field.value === "Free" ? "free" : "paid"}
                           >
-                            <SelectTrigger className="w-[120px]">
+                            <SelectTrigger className="w-[120px] border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                               <SelectValue placeholder="Select type" />
                             </SelectTrigger>
                             <SelectContent>
@@ -531,20 +540,21 @@ export default function EditEventPage() {
                               <SelectItem value="paid">Paid</SelectItem>
                             </SelectContent>
                           </Select>
-                          {field.value.toLowerCase() !== "free" && (
+                          {field.value === "Paid" && (
                             <div className="flex-1">
                               <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
                                   ₹
                                 </span>
                                 <input
                                   type="number"
                                   min="50"
-                                  value={field.value}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value)
-                                  }
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-8 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                  value={form.watch("price")}
+                                  onChange={(e) => {
+                                    const price = parseFloat(e.target.value);
+                                    form.setValue("price", price);
+                                  }}
+                                  className="w-full pl-8 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                                   placeholder="Enter price"
                                 />
                               </div>

@@ -28,6 +28,7 @@ interface Event {
   is_approved?: boolean;
   distance?: number;
   type: string;
+  price: number;
   views?: number;
   status?: string;
 }
@@ -159,11 +160,10 @@ function EventCard({
                   "text-xs px-1.5 py-0.5 rounded-sm whitespace-nowrap",
                   event.type === "Free"
                     ? "bg-green-100 text-green-800"
-                    : "bg-blue-100 text-blue-800"
+                    : "bg-purple-100 text-purple-800"
                 )}
               >
-                {event.type !== "Free" && "₹"}
-                {event.type}
+                {event.type === "Free" ? "Free" : `₹${event.price}`}
               </span>
             </div>
           </div>
@@ -239,11 +239,10 @@ function EventCard({
                       "text-xs font-medium px-3 py-1.5 rounded-t-sm text-center min-w-[90px]",
                       event.type === "Free"
                         ? "bg-green-100 text-green-800"
-                        : "bg-blue-100 text-blue-800"
+                        : "bg-purple-100 text-purple-800"
                     )}
                   >
-                    {event.type !== "Free" && "₹"}
-                    {event.type}
+                    {event.type === "Free" ? "Free" : `₹${event.price}`}
                   </div>
                   <div className="text-xs font-medium px-3 py-1.5 rounded-b-sm bg-gray-100 text-gray-800 text-center border-t border-white/20">
                     {event.distance.toFixed(1)} km away
@@ -254,11 +253,10 @@ function EventCard({
                   className={`text-sm px-2 py-1 rounded-sm ${
                     event.type === "Free"
                       ? "bg-green-100 text-green-800"
-                      : "bg-blue-100 text-blue-800"
+                      : "bg-purple-100 text-purple-800"
                   }`}
                 >
-                  {event.type !== "Free" && "₹"}
-                  {event.type}
+                  {event.type === "Free" ? "Free" : `₹${event.price}`}
                 </span>
               )}
             </div>

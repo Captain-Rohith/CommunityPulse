@@ -120,6 +120,7 @@ class Event(Base):
     longitude = Column(Float, nullable=True)  # Changed to Float
     category = Column(String, index=True)
     type = Column(String, default="Free")  # New column for reg fee/Free
+    price = Column(Float, default=0.0)  # Price per person for paid events
     views = Column(Integer, default=0)  # New column for view count
     start_date = Column(DateTime, index=True)
     end_date = Column(DateTime, index=True)
@@ -318,6 +319,7 @@ class EventCreate(BaseModel):
     longitude: Optional[str] = None
     category: str
     type: str = "Free"  # New field with default value
+    price: float = 0.0  # Price per person for paid events
     start_date: datetime
     end_date: datetime
     registration_start: datetime
@@ -331,6 +333,7 @@ class EventUpdate(BaseModel):
     longitude: Optional[str] = None
     category: Optional[str] = None
     type: Optional[str] = None  # New field
+    price: Optional[float] = None  # Price per person for paid events
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     registration_start: Optional[datetime] = None
@@ -345,6 +348,7 @@ class EventResponse(BaseModel):
     longitude: Optional[float] = None
     category: str
     type: str  # New field
+    price: float  # Price per person for paid events
     views: int  # New field
     start_date: datetime
     end_date: datetime
@@ -570,6 +574,7 @@ async def create_event(
     longitude: Optional[float] = Form(default=None),
     category: str = Form(...),
     type: str = Form("Free"),
+    price: float = Form(0.0),
     start_date: str = Form(...),
     end_date: str = Form(...),
     registration_start: str = Form(...),
@@ -618,6 +623,7 @@ async def create_event(
         longitude=longitude,
         category=category,
         type=type,
+        price=price,
         start_date=start_date_dt,
         end_date=end_date_dt,
         registration_start=registration_start_dt,
@@ -749,6 +755,7 @@ async def update_event(
     longitude: Optional[float] = Form(None),
     category: Optional[str] = Form(None),
     type: Optional[str] = Form(None),  # New field
+    price: Optional[float] = Form(None),  # Price per person for paid events
     start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
     registration_start: Optional[str] = Form(None),
@@ -795,6 +802,8 @@ async def update_event(
         event.category = category
     if type:
         event.type = type
+    if price:
+        event.price = price
     if start_date:
         event.start_date = datetime.fromisoformat(start_date).astimezone(IST)
     if end_date:
@@ -1522,6 +1531,7 @@ async def get_event_details(
         "longitude": event.longitude,
         "category": event.category,
         "type": event.type,
+        "price": event.price,
         "views": event.views,
         "start_date": event.start_date,
         "end_date": event.end_date,
